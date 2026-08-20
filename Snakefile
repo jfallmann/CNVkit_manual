@@ -145,9 +145,6 @@ rule access:
         min_gap = ACCESS_MIN_GAP,
         exclude = lambda w, input: " ".join(f"-x {bed}" for bed in input.exclude),
     threads: 1
-    resources:
-        mem_mb  = SLURM["access"]["mem_mb"],
-        runtime = SLURM["access"]["runtime"],
     log:
         f"{OUTDIR}/logs/access.log"
     shell:
@@ -182,9 +179,6 @@ rule autobin:
         fasta   = FASTA,
         refflat = REFFLAT,
     threads: 1
-    resources:
-        mem_mb  = SLURM["autobin"]["mem_mb"],
-        runtime = SLURM["autobin"]["runtime"],
     log:
         f"{OUTDIR}/logs/autobin.log"
     shell:
@@ -221,9 +215,6 @@ rule coverage:
         cnvkit = CNVKIT,
         mapq   = MAPQ,
     threads: COV_THREADS
-    resources:
-        mem_mb  = SLURM["coverage"]["mem_mb"],
-        runtime = SLURM["coverage"]["runtime"],
     log:
         f"{OUTDIR}/logs/coverage/{{sample}}.log"
     shell:
@@ -260,9 +251,6 @@ rule build_flat_reference:
         cnvkit = CNVKIT,
         fasta  = FASTA,
     threads: 1
-    resources:
-        mem_mb  = SLURM["reference"]["mem_mb"],
-        runtime = SLURM["reference"]["runtime"],
     log:
         f"{OUTDIR}/logs/build_flat_reference.log"
     shell:
@@ -293,9 +281,6 @@ rule build_normal_reference:
         cnvkit = CNVKIT,
         fasta  = FASTA,
     threads: 1
-    resources:
-        mem_mb  = SLURM["reference"]["mem_mb"],
-        runtime = SLURM["reference"]["runtime"],
     log:
         f"{OUTDIR}/logs/build_normal_reference.log"
     shell:
@@ -324,9 +309,6 @@ rule fix:
     params:
         cnvkit = CNVKIT,
     threads: 1
-    resources:
-        mem_mb  = SLURM["fix"]["mem_mb"],
-        runtime = SLURM["fix"]["runtime"],
     log:
         f"{OUTDIR}/logs/{{mode}}/fix.{{sample}}.log"
     shell:
@@ -354,9 +336,6 @@ rule segment:
         cnvkit = CNVKIT,
         method = SEG_METH,
     threads: 1
-    resources:
-        mem_mb  = SLURM["segment"]["mem_mb"],
-        runtime = SLURM["segment"]["runtime"],
     log:
         f"{OUTDIR}/logs/{{mode}}/segment.{{sample}}.log"
     shell:
@@ -382,9 +361,6 @@ rule call:
         cnvkit = CNVKIT,
         ploidy = PLOIDY,
     threads: 1
-    resources:
-        mem_mb  = SLURM["call"]["mem_mb"],
-        runtime = SLURM["call"]["runtime"],
     log:
         f"{OUTDIR}/logs/{{mode}}/call.{{sample}}.log"
     shell:
@@ -411,9 +387,6 @@ rule genemetrics:
     params:
         cnvkit = CNVKIT,
     threads: 1
-    resources:
-        mem_mb  = SLURM["genemetrics"]["mem_mb"],
-        runtime = SLURM["genemetrics"]["runtime"],
     log:
         f"{OUTDIR}/logs/{{mode}}/genemetrics.{{sample}}.log"
     shell:
@@ -439,9 +412,6 @@ rule scatter:
     params:
         cnvkit = CNVKIT,
     threads: 1
-    resources:
-        mem_mb  = SLURM["scatter"]["mem_mb"],
-        runtime = SLURM["scatter"]["runtime"],
     log:
         f"{OUTDIR}/logs/{{mode}}/scatter.{{sample}}.log"
     shell:
@@ -467,9 +437,6 @@ rule diagram:
     params:
         cnvkit = CNVKIT,
     threads: 1
-    resources:
-        mem_mb  = SLURM["diagram"]["mem_mb"],
-        runtime = SLURM["diagram"]["runtime"],
     log:
         f"{OUTDIR}/logs/{{mode}}/diagram.{{sample}}.log"
     shell:
@@ -497,9 +464,6 @@ rule heatmap_vs_reference:
     params:
         cnvkit = CNVKIT,
     threads: 1
-    resources:
-        mem_mb  = SLURM["heatmap"]["mem_mb"],
-        runtime = SLURM["heatmap"]["runtime"],
     log:
         f"{OUTDIR}/logs/heatmap_vs_reference.log"
     shell:
@@ -521,9 +485,6 @@ rule heatmap_vs_normal:
     params:
         cnvkit = CNVKIT,
     threads: 1
-    resources:
-        mem_mb  = SLURM["heatmap"]["mem_mb"],
-        runtime = SLURM["heatmap"]["runtime"],
     log:
         f"{OUTDIR}/logs/heatmap_vs_normal.log"
     shell:
