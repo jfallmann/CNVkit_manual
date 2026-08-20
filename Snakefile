@@ -13,7 +13,8 @@
 #
 # Pipeline steps (one SLURM job each, all parallelised across samples):
 #
-#   0. access             — accessible genome regions from the FASTA (wgs -g)
+#   0. access             — accessible genome regions from the FASTA (wgs -g),
+#                           minus blacklisted regions
 #   1. autobin            — build genome-wide WGS bins once from the normal BAM
 #   2. coverage           — per-sample read-depth in target + antitarget bins
 #   3a. flat_reference    — flat reference (from bins only, no coverage)
@@ -48,6 +49,12 @@ VS_NOR_SAMPLES = config["vs_normal_samples"]
 # Prefix for every CNVkit call — activates the named conda env without
 # requiring the SLURM job script to run in an interactive shell.
 CNVKIT = f"conda run --no-capture-output -n {CONDA} cnvkit.py"
+
+# Regions to drop from the accessible genome (ENCODE blacklist, centromeres,
+# ...).  Optional — leave the config list empty to keep the whole assembly
+# minus its N-runs.
+ACCESS_EXCLUDE  = config["cnvkit"].get("access_exclude") or []
+ACCESS_MIN_GAP  = config["cnvkit"].get("access_min_gap", 5000)
 
 METHOD      = config["cnvkit"]["method"]
 MAPQ        = config["cnvkit"]["min_mapq"]
@@ -124,14 +131,19 @@ rule all:
 # STEP 0 — Accessible regions
 # Sequencing-accessible regions of the genome (assembly minus long N runs).
 # CNVkit's 'wgs' binning method requires these; derived once from the FASTA.
+# Any BED files in cnvkit.access_exclude (e.g. the ENCODE blacklist) are
+# additionally subtracted via -x, so blacklisted regions are never binned.
 # =============================================================================
 rule access:
     input:
-        fasta = FASTA,
+        fasta   = FASTA,
+        exclude = ACCESS_EXCLUDE,
     output:
         bed = f"{OUTDIR}/bins/access.bed",
     params:
-        cnvkit = CNVKIT,
+        cnvkit  = CNVKIT,
+        min_gap = ACCESS_MIN_GAP,
+        exclude = lambda w, input: " ".join(f"-x {bed}" for bed in input.exclude),
     threads: 1
     resources:
         mem_mb  = SLURM["access"]["mem_mb"],
@@ -143,6 +155,8 @@ rule access:
         mkdir -p "$(dirname {output.bed})" "$(dirname {log})"
 
         {params.cnvkit} access {input.fasta} \
+            --min-gap-size {params.min_gap} \
+            {params.exclude} \
             -o {output.bed} \
         2>&1 | tee {log}
         """

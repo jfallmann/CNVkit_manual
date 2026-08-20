@@ -101,6 +101,18 @@ cnvkit:
   ploidy: 2              # assumed baseline ploidy for cnvkit call
   coverage_threads: 8    # parallel threads per coverage job (passed as -p)
 
+  # Minimum gap between accessible regions for `cnvkit.py access` (-s).
+  access_min_gap: 5000
+
+  # BED files subtracted from the accessible genome (`cnvkit.py access -x`),
+  # so blacklisted/unreliable regions are never binned.  Listed files must
+  # exist before the run; set to [] to disable.
+  # Download the ENCODE hg38 blacklist (chr-prefixed, matches assembly38):
+  #   wget -qO- https://github.com/Boyle-Lab/Blacklist/raw/master/lists/hg38-blacklist.v2.bed.gz \
+  #     | gunzip > ${OUTPUT_DIR}/cnvkit_manual/reference/hg38-blacklist.v2.bed
+  access_exclude:
+    - "${OUTPUT_DIR}/cnvkit_manual/reference/hg38-blacklist.v2.bed"
+
 # ─── SLURM resource limits ────────────────────────────────────────────────────
 # Interpreted by the Snakefile and forwarded to your SLURM profile via
 # Snakemake's resources: directive.  Adjust to your cluster's partition limits.

@@ -27,6 +27,11 @@ OUTDIR="${OUTPUT_DIR}/cnvkit_manual"
 FASTA="/resources/references/igenomes/Homo_sapiens/GATK/GRCh38/Sequence/WholeGenomeFasta/Homo_sapiens_assembly38.fasta"
 REFFLAT="${OUTDIR}/reference/hg38.refFlat.txt"
 
+# ENCODE hg38 blacklist — subtracted from the accessible genome by rule access
+# (cnvkit.access_exclude in config.yaml).
+BLACKLIST="${OUTDIR}/reference/hg38-blacklist.v2.bed"
+BLACKLIST_URL="https://github.com/Boyle-Lab/Blacklist/raw/master/lists/hg38-blacklist.v2.bed.gz"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SAMPLES
 # 16 unique biological samples.
@@ -54,6 +59,7 @@ mkdir -p \
     "${OUTDIR}/bams" \
     "${OUTDIR}/bins" \
     "${OUTDIR}/coverage" \
+    "${OUTDIR}/reference" \
     "${OUTDIR}/references" \
     "${OUTDIR}/vs_reference" \
     "${OUTDIR}/vs_normal" \
@@ -139,6 +145,33 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 4b. ENCODE blacklist
+# ─────────────────────────────────────────────────────────────────────────────
+# Downloaded automatically — it is small and the URL is stable.  Remove the
+# path from cnvkit.access_exclude in config.yaml to skip blacklist filtering.
+if [[ -f "${BLACKLIST}" ]]; then
+    LINES=$(wc -l < "${BLACKLIST}")
+    echo "==> blacklist found: ${BLACKLIST}  (${LINES} regions)"
+else
+    echo "==> Downloading ENCODE hg38 blacklist -> ${BLACKLIST}"
+    if wget -qO- "${BLACKLIST_URL}" | gunzip > "${BLACKLIST}.tmp"; then
+        mv "${BLACKLIST}.tmp" "${BLACKLIST}"
+        echo "    OK  ($(wc -l < "${BLACKLIST}") regions)"
+    else
+        rm -f "${BLACKLIST}.tmp"
+        echo ""
+        echo "==> [ACTION REQUIRED] blacklist download failed.  Fetch it manually:"
+        echo ""
+        echo "      wget -qO- \\"
+        echo "        ${BLACKLIST_URL} \\"
+        echo "        | gunzip > \"${BLACKLIST}\""
+        echo ""
+        echo "    Or remove it from cnvkit.access_exclude in config.yaml."
+        echo ""
+    fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 5. Summary
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
@@ -147,7 +180,7 @@ echo " Setup complete.  Output directory: ${OUTDIR}"
 echo "============================================================"
 echo ""
 echo "Next steps:"
-echo "  1. Download refFlat.txt if not already present (see above)."
+echo "  1. Download refFlat.txt / blacklist if not already present (see above)."
 echo "  2. Review config.yaml — adjust SLURM resource limits if needed."
 echo "  3. Dry-run to verify the DAG:"
 echo "       bash run_pipeline.sh --dry-run"
