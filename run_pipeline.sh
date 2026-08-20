@@ -54,7 +54,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --config|-c)
             CONFIG="$2"; shift
-            ;;    
+            ;;
         --until|--forcerun|--touch|--unlock)
             # Pass through to snakemake as-is (with optional next arg)
             EXTRA_ARGS+=("$1")
@@ -96,7 +96,7 @@ snakemake \
     --jobs       "${MAX_JOBS}" \
     --rerun-incomplete \
     --keep-going \
-    --printshellcmds \    
+    --printshellcmds \
     ${DRY_RUN} \
     "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 
