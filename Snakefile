@@ -61,7 +61,6 @@ MAPQ        = config["cnvkit"]["min_mapq"]
 SEG_METH    = config["cnvkit"]["segment_method"]
 PLOIDY      = config["cnvkit"]["ploidy"]
 COV_THREADS = config["cnvkit"]["coverage_threads"]
-SLURM       = config["slurm"]
 
 # ─── Helper functions ─────────────────────────────────────────────────────────
 
