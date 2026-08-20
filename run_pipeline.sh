@@ -11,18 +11,20 @@
 #        conda activate snakemake && bash run_pipeline.sh
 #      Individual CNVkit jobs are activated via 'conda run -n cnvkit' inside
 #      the Snakefile, so the snakemake environment does NOT need CNVkit.
-#   3. Your SLURM profile is at ~/.config/snakemake/<PROFILE>/config.yaml
-#      and maps Snakemake's resources (mem_mb, runtime) to SBATCH directives.
+#   3. Job resources come from the bundled profile,
+#      profiles/slurm/config.v8+.yaml — edit set-resources there, not in
+#      config.yaml.  Pass --profile to use a different one.
 #
 # Usage
 #   bash run_pipeline.sh [options]
 #
 # Options
 #   --dry-run  | -n        Print jobs without submitting (DAG check)
-#   --profile  NAME        SLURM profile name  (default: slurm)
-#   --executor NAME        Snakemake executor plugin (default: slurm).
-#                          Snakemake >=8 runs LOCALLY unless an executor is
-#                          given, so this is passed explicitly.  Use
+#   --profile  DIR         Profile directory (default: profiles/slurm next to
+#                          this script)
+#   --executor NAME        Snakemake executor plugin (default: taken from the
+#                          profile, which sets 'executor: slurm').  Snakemake
+#                          >=8 runs LOCALLY without one.  Use
 #                          '--executor local' to run on the current machine.
 #   --jobs     N           Max concurrent cluster jobs  (default: 100)
 #   --until    RULE        Run up to (and including) a specific rule
@@ -39,8 +41,8 @@ SNAKEFILE="${SCRIPT_DIR}/Snakefile"
 CONFIG="${SCRIPT_DIR}/config.yaml"
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
-PROFILE="slurm"
-EXECUTOR="slurm"
+PROFILE="${SCRIPT_DIR}/profiles/slurm"
+EXECUTOR=""
 MAX_JOBS=100
 DRY_RUN=""
 EXTRA_ARGS=()
@@ -92,17 +94,19 @@ echo "==> Snakemake ${SM_VERSION}"
 echo "==> Snakefile:  ${SNAKEFILE}"
 echo "==> Config:     ${CONFIG}"
 echo "==> Profile:    ${PROFILE}"
-echo "==> Executor:   ${EXECUTOR}"
+echo "==> Executor:   ${EXECUTOR:-slurm (from profile)}"
 echo "==> Max jobs:   ${MAX_JOBS}"
 [[ -n "${DRY_RUN}" ]] && echo "==> MODE:       DRY RUN (no jobs submitted)"
 echo ""
 
 # ─── Run ─────────────────────────────────────────────────────────────────────
+# The profile sets 'executor: slurm'; only override when asked to.
+[[ -n "${EXECUTOR}" ]] && EXTRA_ARGS+=("--executor" "${EXECUTOR}")
+
 snakemake \
     --snakefile  "${SNAKEFILE}" \
     --configfile "${CONFIG}" \
     --profile    "${PROFILE}" \
-    --executor   "${EXECUTOR}" \
     --jobs       "${MAX_JOBS}" \
     --rerun-incomplete \
     --keep-going \

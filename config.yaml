@@ -114,87 +114,10 @@ cnvkit:
     - "${OUTPUT_DIR}/cnvkit_manual/reference/hg38-blacklist.v2.bed"
 
 # ─── SLURM resources ─────────────────────────────────────────────────────────
-# Forwarded to the SLURM executor via Snakemake's resources: directive.
-# Values are expressions evaluated per job attempt, so a job that fails gets
-# resubmitted with doubled memory/runtime up to the given cap:
-#     min(BASE * (2 ** (attempt - 1)), CAP)
-# runtime is in minutes.  partition/qos are derived from the same runtime
-# expression, using this cluster's CPU partitions (short <=1440 min,
-# medium <=2880 min, long above).
-slurm:
-  access:
-    mem_mb: "min(8000 * (2 ** (attempt - 1)), 32000)"
-    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
-    threads: 1
-    partition: "('c_long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'c_medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'c')"
-    qos: "('long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'short')"
-
-  autobin:
-    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
-    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
-    threads: 1
-    partition: "('c_long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'c_medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'c')"
-    qos: "('long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'short')"
-
-  coverage:
-    mem_mb: "min(32000 * (2 ** (attempt - 1)), 120000)"
-    runtime: "min(360 * (2 ** (attempt - 1)), 1440)"
-    threads: 8
-    partition: "('c_long' if min(360 * (2 ** (attempt - 1)), 1440) > 2880 else 'c_medium' if min(360 * (2 ** (attempt - 1)), 1440) > 1440 else 'c')"
-    qos: "('long' if min(360 * (2 ** (attempt - 1)), 1440) > 2880 else 'medium' if min(360 * (2 ** (attempt - 1)), 1440) > 1440 else 'short')"
-
-  reference:
-    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
-    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
-    threads: 1
-    partition: "('c_long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'c_medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'c')"
-    qos: "('long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'short')"
-
-  fix:
-    mem_mb: "min(8000 * (2 ** (attempt - 1)), 32000)"
-    runtime: "min(30 * (2 ** (attempt - 1)), 120)"
-    threads: 1
-    partition: "('c_long' if min(30 * (2 ** (attempt - 1)), 120) > 2880 else 'c_medium' if min(30 * (2 ** (attempt - 1)), 120) > 1440 else 'c')"
-    qos: "('long' if min(30 * (2 ** (attempt - 1)), 120) > 2880 else 'medium' if min(30 * (2 ** (attempt - 1)), 120) > 1440 else 'short')"
-
-  segment:
-    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
-    runtime: "min(120 * (2 ** (attempt - 1)), 480)"
-    threads: 1
-    partition: "('c_long' if min(120 * (2 ** (attempt - 1)), 480) > 2880 else 'c_medium' if min(120 * (2 ** (attempt - 1)), 480) > 1440 else 'c')"
-    qos: "('long' if min(120 * (2 ** (attempt - 1)), 480) > 2880 else 'medium' if min(120 * (2 ** (attempt - 1)), 480) > 1440 else 'short')"
-
-  call:
-    mem_mb: "min(4000 * (2 ** (attempt - 1)), 16000)"
-    runtime: "min(30 * (2 ** (attempt - 1)), 120)"
-    threads: 1
-    partition: "('c_long' if min(30 * (2 ** (attempt - 1)), 120) > 2880 else 'c_medium' if min(30 * (2 ** (attempt - 1)), 120) > 1440 else 'c')"
-    qos: "('long' if min(30 * (2 ** (attempt - 1)), 120) > 2880 else 'medium' if min(30 * (2 ** (attempt - 1)), 120) > 1440 else 'short')"
-
-  genemetrics:
-    mem_mb: "min(4000 * (2 ** (attempt - 1)), 16000)"
-    runtime: "min(30 * (2 ** (attempt - 1)), 120)"
-    threads: 1
-    partition: "('c_long' if min(30 * (2 ** (attempt - 1)), 120) > 2880 else 'c_medium' if min(30 * (2 ** (attempt - 1)), 120) > 1440 else 'c')"
-    qos: "('long' if min(30 * (2 ** (attempt - 1)), 120) > 2880 else 'medium' if min(30 * (2 ** (attempt - 1)), 120) > 1440 else 'short')"
-
-  scatter:
-    mem_mb: "min(8000 * (2 ** (attempt - 1)), 32000)"
-    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
-    threads: 1
-    partition: "('c_long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'c_medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'c')"
-    qos: "('long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'short')"
-
-  diagram:
-    mem_mb: "min(8000 * (2 ** (attempt - 1)), 32000)"
-    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
-    threads: 1
-    partition: "('c_long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'c_medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'c')"
-    qos: "('long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'short')"
-
-  heatmap:
-    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
-    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
-    threads: 1
-    partition: "('c_long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'c_medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'c')"
-    qos: "('long' if min(60 * (2 ** (attempt - 1)), 240) > 2880 else 'medium' if min(60 * (2 ** (attempt - 1)), 240) > 1440 else 'short')"
+# NOT configured here.  Per-rule memory / runtime / threads / partition / qos
+# live in the snakemake profile, which is the only place the SLURM executor
+# reads them from:
+#
+#     profiles/slurm/config.v8+.yaml   ->  set-resources:
+#
+# Edit that file to change job resources.

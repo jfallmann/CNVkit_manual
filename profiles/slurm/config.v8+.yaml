@@ -1,0 +1,108 @@
+# =============================================================================
+# Snakemake >=8 SLURM profile for the CNVkit WGS pipeline
+# =============================================================================
+# Mirrors ~/IMP/Profiles/profile_snakemake/config.v8+.yaml, but carries the
+# per-rule resources of THIS pipeline (they used to live in config.yaml).
+#
+# Usage:
+#   bash run_pipeline.sh                      # uses this profile by default
+#   snakemake --profile profiles/slurm ...    # equivalent, by hand
+#
+# mem_mb / runtime are Python expressions evaluated per attempt, so a job that
+# fails gets resubmitted with doubled memory and runtime, capped:
+#     min(BASE * (2 ** (attempt - 1)), CAP)
+# runtime is in minutes.
+#
+# NOTE on partitions: the snakemake SLURM executor plugin reads the resource
+# 'slurm_partition' — a plain 'partition' key is silently ignored (that is a
+# latent bug in the IMP profile).  'qos' IS read as a job resource.
+# Partition/QOS are derived from the same runtime expression:
+#     short <= 1440 min, medium <= 2880 min, long above.
+# =============================================================================
+
+executor: slurm
+
+default-resources:
+  slurm_account: "${SLURM_ACCOUNT}"
+  nodes: 1
+  mem_mb: "min(20000 * (2 ** (attempt - 1)), 40000)"
+  runtime: "min(60 * (2 ** (attempt - 1)), 120)"
+  threads: 1
+  qos: short
+  slurm_partition: c
+
+set-resources:
+  # ─── binning ───────────────────────────────────────────────────────────────
+  access:
+    mem_mb: "min(8000 * (2 ** (attempt - 1)), 32000)"
+    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
+    threads: 1
+  autobin:
+    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
+    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
+    threads: 1
+
+  # ─── coverage: the heavy step, one job per sample ───────────────────────────
+  coverage:
+    mem_mb: "min(32000 * (2 ** (attempt - 1)), 120000)"
+    runtime: "min(360 * (2 ** (attempt - 1)), 1440)"
+    threads: 8
+    slurm_partition: "('c_long' if min(360 * (2 ** (attempt - 1)), 1440) > 2880 else 'c_medium' if min(360 * (2 ** (attempt - 1)), 1440) > 1440 else 'c')"
+    qos: "('long' if min(360 * (2 ** (attempt - 1)), 1440) > 2880 else 'medium' if min(360 * (2 ** (attempt - 1)), 1440) > 1440 else 'short')"
+
+  # ─── references ────────────────────────────────────────────────────────────
+  build_flat_reference:
+    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
+    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
+    threads: 1
+  build_normal_reference:
+    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
+    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
+    threads: 1
+
+  # ─── per-sample calling ────────────────────────────────────────────────────
+  fix:
+    mem_mb: "min(8000 * (2 ** (attempt - 1)), 32000)"
+    runtime: "min(30 * (2 ** (attempt - 1)), 120)"
+    threads: 1
+  segment:
+    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
+    runtime: "min(120 * (2 ** (attempt - 1)), 480)"
+    threads: 1
+  call:
+    mem_mb: "min(4000 * (2 ** (attempt - 1)), 16000)"
+    runtime: "min(30 * (2 ** (attempt - 1)), 120)"
+    threads: 1
+  genemetrics:
+    mem_mb: "min(4000 * (2 ** (attempt - 1)), 16000)"
+    runtime: "min(30 * (2 ** (attempt - 1)), 120)"
+    threads: 1
+
+  # ─── plots ─────────────────────────────────────────────────────────────────
+  scatter:
+    mem_mb: "min(8000 * (2 ** (attempt - 1)), 32000)"
+    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
+    threads: 1
+  diagram:
+    mem_mb: "min(8000 * (2 ** (attempt - 1)), 32000)"
+    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
+    threads: 1
+  heatmap_vs_reference:
+    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
+    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
+    threads: 1
+  heatmap_vs_normal:
+    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
+    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
+    threads: 1
+
+jobs: 100
+keep-going: true
+rerun-incomplete: true
+scheduler: greedy
+max-jobs-per-second: 10
+max-status-checks-per-second: 10
+restart-times: 1
+local-cores: 1
+latency-wait: 60
+printshellcmds: true
