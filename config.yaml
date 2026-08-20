@@ -106,6 +106,9 @@ cnvkit:
 # Snakemake's resources: directive.  Adjust to your cluster's partition limits.
 # runtime is in minutes.
 slurm:
+  access:
+    mem_mb: 8000
+    runtime: 60
   autobin:
     mem_mb: 16000
     runtime: 60

@@ -13,6 +13,7 @@
 #
 # Pipeline steps (one SLURM job each, all parallelised across samples):
 #
+#   0. access             — accessible genome regions from the FASTA (wgs -g)
 #   1. autobin            — build genome-wide WGS bins once from the normal BAM
 #   2. coverage           — per-sample read-depth in target + antitarget bins
 #   3a. flat_reference    — flat reference (from bins only, no coverage)
@@ -120,14 +121,44 @@ rule all:
 
 
 # =============================================================================
+# STEP 0 — Accessible regions
+# Sequencing-accessible regions of the genome (assembly minus long N runs).
+# CNVkit's 'wgs' binning method requires these; derived once from the FASTA.
+# =============================================================================
+rule access:
+    input:
+        fasta = FASTA,
+    output:
+        bed = f"{OUTDIR}/bins/access.bed",
+    params:
+        cnvkit = CNVKIT,
+    threads: 1
+    resources:
+        mem_mb  = SLURM["access"]["mem_mb"],
+        runtime = SLURM["access"]["runtime"],
+    log:
+        f"{OUTDIR}/logs/access.log"
+    shell:
+        """
+        mkdir -p "$(dirname {output.bed})" "$(dirname {log})"
+
+        {params.cnvkit} access {input.fasta} \
+            -o {output.bed} \
+        2>&1 | tee {log}
+        """
+
+
+# =============================================================================
 # STEP 1 — Autobin
 # Generate genome-wide WGS target and antitarget BED files.
 # Done once using the normal BAM; the resulting bins are shared by all samples.
+# Method 'wgs' requires the accessible-regions BED, passed via -g.
 # =============================================================================
 rule autobin:
     input:
-        bam = bam_path(NORMAL),
-        bai = bai_path(NORMAL),
+        bam    = bam_path(NORMAL),
+        bai    = bai_path(NORMAL),
+        access = f"{OUTDIR}/bins/access.bed",
     output:
         target     = f"{OUTDIR}/bins/cnvkit_targets.bed",
         antitarget = f"{OUTDIR}/bins/cnvkit_antitargets.bed",
@@ -143,9 +174,12 @@ rule autobin:
         f"{OUTDIR}/logs/autobin.log"
     shell:
         """
+        mkdir -p "$(dirname {output.target})" "$(dirname {log})"
+
         {params.cnvkit} autobin {input.bam} \
             --method {params.method} \
             --fasta {params.fasta} \
+            --access {input.access} \
             --target-output-bed {output.target} \
             --antitarget-output-bed {output.antitarget} \
         2>&1 | tee {log}
