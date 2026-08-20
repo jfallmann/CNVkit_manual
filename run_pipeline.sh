@@ -52,6 +52,9 @@ while [[ $# -gt 0 ]]; do
         --jobs|-j)
             MAX_JOBS="$2"; shift
             ;;
+        --config|-c)
+            CONFIG="$2"; shift
+            ;;    
         --until|--forcerun|--touch|--unlock)
             # Pass through to snakemake as-is (with optional next arg)
             EXTRA_ARGS+=("$1")
