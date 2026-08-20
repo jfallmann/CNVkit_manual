@@ -177,9 +177,10 @@ rule autobin:
         target     = f"{OUTDIR}/bins/cnvkit_targets.bed",
         antitarget = f"{OUTDIR}/bins/cnvkit_antitargets.bed",
     params:
-        cnvkit = CNVKIT,
-        method = METHOD,
-        fasta  = FASTA,
+        cnvkit  = CNVKIT,
+        method  = METHOD,
+        fasta   = FASTA,
+        refflat = REFFLAT,
     threads: 1
     resources:
         mem_mb  = SLURM["autobin"]["mem_mb"],
@@ -194,6 +195,7 @@ rule autobin:
             --method {params.method} \
             --fasta {params.fasta} \
             --access {input.access} \
+            --annotate {params.refflat} \
             --target-output-bed {output.target} \
             --antitarget-output-bed {output.antitarget} \
         2>&1 | tee {log}
@@ -255,9 +257,8 @@ rule build_flat_reference:
     output:
         ref = f"{OUTDIR}/references/flat_reference.cnn",
     params:
-        cnvkit  = CNVKIT,
-        fasta   = FASTA,
-        refflat = REFFLAT,
+        cnvkit = CNVKIT,
+        fasta  = FASTA,
     threads: 1
     resources:
         mem_mb  = SLURM["reference"]["mem_mb"],
@@ -267,9 +268,9 @@ rule build_flat_reference:
     shell:
         """
         {params.cnvkit} reference \
-            {input.target} {input.antitarget} \
+            -t {input.target} \
+            -a {input.antitarget} \
             --fasta {params.fasta} \
-            --annotate {params.refflat} \
             -o {output.ref} \
         2>&1 | tee {log}
         """
@@ -289,9 +290,8 @@ rule build_normal_reference:
     output:
         ref = f"{OUTDIR}/references/normal_reference.cnn",
     params:
-        cnvkit  = CNVKIT,
-        fasta   = FASTA,
-        refflat = REFFLAT,
+        cnvkit = CNVKIT,
+        fasta  = FASTA,
     threads: 1
     resources:
         mem_mb  = SLURM["reference"]["mem_mb"],
@@ -303,7 +303,6 @@ rule build_normal_reference:
         {params.cnvkit} reference \
             {input.target_cov} {input.antitarget_cov} \
             --fasta {params.fasta} \
-            --annotate {params.refflat} \
             -o {output.ref} \
         2>&1 | tee {log}
         """
@@ -401,7 +400,7 @@ rule call:
 # =============================================================================
 # STEP 7 — Genemetrics
 # Per-gene copy-number statistics — mean log2 ratio, p-value, etc.
-# Requires gene labels in the reference (provided by --annotate refflat above).
+# Requires gene labels in the bins (provided by autobin --annotate refflat).
 # =============================================================================
 rule genemetrics:
     input:
