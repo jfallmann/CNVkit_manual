@@ -93,8 +93,7 @@ snakemake \
     --jobs       "${MAX_JOBS}" \
     --rerun-incomplete \
     --keep-going \
-    --printshellcmds \
-    --reason \
+    --printshellcmds \    
     ${DRY_RUN} \
     "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 
