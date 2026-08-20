@@ -31,26 +31,19 @@ conda_env: "cnvkit"
 normal_sample: "Bulk_sensitive"
 
 # ─── Sample registry ──────────────────────────────────────────────────────────
-# 16 unique biological samples.
-# Bulk_sensitive_1..7 are identical to Bulk_sensitive (same FASTQ) and are
-# intentionally excluded — processing them would be redundant.
+# 9 unique biological samples.
+# The *_1 names (and Bulk_sensitive_1..7) are Sarek somatic-pairing aliases:
+# they map to the same FASTQ and produce identical BAMs, so they are excluded.
 all_samples:
   - Bulk_sensitive
   - Bulk_resistant
   - BC1_naive
-  - BC1_naive_1
   - BC3_naive
-  - BC3_naive_1
   - BC217_naive
-  - BC217_naive_1
   - BC217_resistant
-  - BC217_resistant_1
   - BC139_naive
-  - BC139_naive_1
   - BC139_resistant
-  - BC139_resistant_1
   - BC1444_naive
-  - BC1444_naive_1
 
 # ─── Analysis: vs flat (theoretical) genome reference ─────────────────────────
 # Every sample including Bulk_sensitive is analyzed here so you can see how
@@ -59,19 +52,12 @@ vs_ref_samples:
   - Bulk_sensitive
   - Bulk_resistant
   - BC1_naive
-  - BC1_naive_1
   - BC3_naive
-  - BC3_naive_1
   - BC217_naive
-  - BC217_naive_1
   - BC217_resistant
-  - BC217_resistant_1
   - BC139_naive
-  - BC139_naive_1
   - BC139_resistant
-  - BC139_resistant_1
   - BC1444_naive
-  - BC1444_naive_1
 
 # ─── Analysis: vs Bulk_sensitive matched normal ────────────────────────────────
 # Bulk_sensitive is the reference here; it is excluded from this list.
@@ -79,27 +65,40 @@ vs_ref_samples:
 vs_normal_samples:
   - Bulk_resistant
   - BC1_naive
-  - BC1_naive_1
   - BC3_naive
-  - BC3_naive_1
   - BC217_naive
-  - BC217_naive_1
   - BC217_resistant
-  - BC217_resistant_1
   - BC139_naive
-  - BC139_naive_1
   - BC139_resistant
-  - BC139_resistant_1
   - BC1444_naive
-  - BC1444_naive_1
 
 # ─── CNVkit parameters ───────────────────────────────────────────────────────
 cnvkit:
   method: "wgs"          # wgs = whole-genome sequencing (no capture target BED)
   min_mapq: 20           # minimum MAPQ for read counting in coverage
   segment_method: "cbs"  # segmentation: cbs | haar | flasso | hmm | hmm-tumor
-  ploidy: 2              # assumed baseline ploidy for cnvkit call
   coverage_threads: 8    # parallel threads per coverage job (passed as -p)
+
+  # ── cnvkit call: tumour ploidy / purity ────────────────────────────────────
+  # NOT estimated by the pipeline.  Set them only if you know them; when left
+  # null the flag is omitted and CNVkit uses its own default (ploidy 2, no
+  # purity correction).
+  ploidy: null
+  purity: null
+
+  # ── Chromosome filtering ───────────────────────────────────────────────────
+  # Chromosomes dropped from the accessible genome, hence from every bin and
+  # every downstream result.  Non-canonical contigs (*_random, chrUn_*, *_alt,
+  # chrEBV, chrM) are always dropped.  chrY is noise in female samples and
+  # largely unmappable; add "chrX" here to drop X as well.
+  drop_chr: ["chrY"]
+
+  # ── Amplified / deleted gene lists (from genemetrics) ──────────────────────
+  genelist:
+    amp_log2: 0.585      # >= this log2 => amplified (~3 copies if diploid)
+    del_log2: -0.585     # <= this log2 => deleted  (~1.3 copies); -1.0 for
+                         # homozygous loss only
+    min_probes: 5        # ignore genes covered by fewer bins
 
   # Minimum gap between accessible regions for `cnvkit.py access` (-s).
   access_min_gap: 5000

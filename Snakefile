@@ -14,7 +14,7 @@
 # Pipeline steps (one SLURM job each, all parallelised across samples):
 #
 #   0. access             — accessible genome regions from the FASTA (wgs -g),
-#                           minus blacklisted regions
+#                           minus blacklisted regions and dropped chromosomes
 #   1. autobin            — build genome-wide WGS bins once from the normal BAM
 #   2. coverage           — per-sample read-depth in target + antitarget bins
 #   3a. flat_reference    — flat reference (from bins only, no coverage)
@@ -23,6 +23,8 @@
 #   5. segment            — circular binary segmentation (CBS)        → .cns
 #   6. call               — integer copy-number calls                 → .call.cns
 #   7. genemetrics        — per-gene statistics                       → .genemetrics.tsv
+#  7b. genelist           — amplified / deleted gene lists            → .amplified.tsv,
+#                                                                       .deleted.tsv
 #   8. scatter            — genome-wide scatter plot                  → .scatter.png
 #   9. diagram            — chromosome arm diagram                    → .diagram.pdf
 #  10. heatmap            — multi-sample heatmap per mode             → heatmap.pdf
@@ -59,8 +61,30 @@ ACCESS_MIN_GAP  = config["cnvkit"].get("access_min_gap", 5000)
 METHOD      = config["cnvkit"]["method"]
 MAPQ        = config["cnvkit"]["min_mapq"]
 SEG_METH    = config["cnvkit"]["segment_method"]
-PLOIDY      = config["cnvkit"]["ploidy"]
 COV_THREADS = config["cnvkit"]["coverage_threads"]
+
+# Ploidy / purity are never estimated here: pass them through only if the
+# config sets them, otherwise leave CNVkit's own defaults in place.
+PLOIDY = config["cnvkit"].get("ploidy")
+PURITY = config["cnvkit"].get("purity")
+CALL_OPTS = " ".join(
+    o for o in (
+        f"--ploidy {PLOIDY}" if PLOIDY else "",
+        f"--purity {PURITY}" if PURITY else "",
+    ) if o
+)
+
+# Chromosomes kept in the accessible genome: the canonical set minus
+# cnvkit.drop_chr.  Everything else (alt/random/unplaced contigs, chrM,
+# chrEBV) is dropped, so no downstream step ever sees those bins.
+DROP_CHR   = set(config["cnvkit"].get("drop_chr") or [])
+CANON_CHR  = [f"chr{c}" for c in list(range(1, 23)) + ["X", "Y"]]
+KEEP_CHR   = [c for c in CANON_CHR if c not in DROP_CHR]
+
+GENELIST   = config["cnvkit"].get("genelist") or {}
+AMP_LOG2   = GENELIST.get("amp_log2", 0.585)
+DEL_LOG2   = GENELIST.get("del_log2", -0.585)
+MIN_PROBES = GENELIST.get("min_probes", 5)
 
 # ─── Helper functions ─────────────────────────────────────────────────────────
 
@@ -101,6 +125,18 @@ rule all:
             sample=VS_REF_SAMPLES,
         ),
         expand(
+            f"{OUTDIR}/vs_reference/{{sample}}/{{sample}}.amplified.tsv",
+            sample=VS_REF_SAMPLES,
+        ),
+        expand(
+            f"{OUTDIR}/vs_reference/{{sample}}/{{sample}}.deleted.tsv",
+            sample=VS_REF_SAMPLES,
+        ),
+        expand(
+            f"{OUTDIR}/vs_reference/{{sample}}/{{sample}}.call.cns",
+            sample=VS_REF_SAMPLES,
+        ),
+        expand(
             f"{OUTDIR}/vs_reference/{{sample}}/{{sample}}.scatter.png",
             sample=VS_REF_SAMPLES,
         ),
@@ -113,6 +149,18 @@ rule all:
         # ── vs_normal ─────────────────────────────────────────────────────────
         expand(
             f"{OUTDIR}/vs_normal/{{sample}}/{{sample}}.genemetrics.tsv",
+            sample=VS_NOR_SAMPLES,
+        ),
+        expand(
+            f"{OUTDIR}/vs_normal/{{sample}}/{{sample}}.amplified.tsv",
+            sample=VS_NOR_SAMPLES,
+        ),
+        expand(
+            f"{OUTDIR}/vs_normal/{{sample}}/{{sample}}.deleted.tsv",
+            sample=VS_NOR_SAMPLES,
+        ),
+        expand(
+            f"{OUTDIR}/vs_normal/{{sample}}/{{sample}}.call.cns",
             sample=VS_NOR_SAMPLES,
         ),
         expand(
@@ -143,6 +191,7 @@ rule access:
         cnvkit  = CNVKIT,
         min_gap = ACCESS_MIN_GAP,
         exclude = lambda w, input: " ".join(f"-x {bed}" for bed in input.exclude),
+        keep    = ",".join(KEEP_CHR),
     threads: 1
     log:
         f"{OUTDIR}/logs/access.log"
@@ -153,8 +202,18 @@ rule access:
         {params.cnvkit} access {input.fasta} \
             --min-gap-size {params.min_gap} \
             {params.exclude} \
-            -o {output.bed} \
+            -o {output.bed}.all \
         2>&1 | tee {log}
+
+        # Keep only the wanted chromosomes; drops alt/random/unplaced contigs
+        # and anything listed in cnvkit.drop_chr.
+        awk -v keep="{params.keep}" \
+            'BEGIN {{ n = split(keep, k, ","); for (i = 1; i <= n; i++) ok[k[i]] = 1 }}
+             ok[$1]' \
+            {output.bed}.all > {output.bed}
+        rm -f {output.bed}.all
+
+        echo "kept: $(cut -f1 {output.bed} | sort -u | paste -sd' ' -)" | tee -a {log}
         """
 
 
@@ -350,6 +409,8 @@ rule segment:
 # =============================================================================
 # STEP 6 — Call
 # Convert segment log2 ratios to integer absolute copy-number calls.
+# --ploidy / --purity are passed only when set in the config; CNVkit does not
+# estimate them and neither does this pipeline.
 # =============================================================================
 rule call:
     input:
@@ -358,7 +419,7 @@ rule call:
         call_cns = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.call.cns",
     params:
         cnvkit = CNVKIT,
-        ploidy = PLOIDY,
+        opts   = CALL_OPTS,
     threads: 1
     log:
         f"{OUTDIR}/logs/{{mode}}/call.{{sample}}.log"
@@ -366,7 +427,7 @@ rule call:
         """
         {params.cnvkit} call \
             {input.cns} \
-            --ploidy {params.ploidy} \
+            {params.opts} \
             -o {output.call_cns} \
         2>&1 | tee {log}
         """
@@ -395,6 +456,63 @@ rule genemetrics:
             -s {input.cns} \
             -o {output.tsv} \
         2>&1 | tee {log}
+        """
+
+
+# =============================================================================
+# STEP 7b — Amplified / deleted gene lists
+# Split the genemetrics table at fixed log2 cutoffs (cnvkit.genelist in the
+# config) into an amplified and a deleted table, plus bare gene-symbol lists
+# for pasting into enrichment tools.  Sorted by |log2|, strongest first.
+# =============================================================================
+rule genelist:
+    input:
+        tsv = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.genemetrics.tsv",
+    output:
+        amp       = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.amplified.tsv",
+        dele      = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.deleted.tsv",
+        amp_genes = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.amplified.genes.txt",
+        del_genes = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.deleted.genes.txt",
+    params:
+        amp_log2   = AMP_LOG2,
+        del_log2   = DEL_LOG2,
+        min_probes = MIN_PROBES,
+    threads: 1
+    log:
+        f"{OUTDIR}/logs/{{mode}}/genelist.{{sample}}.log"
+    shell:
+        r"""
+        # Column positions are read from the header, not hardcoded.
+        # Rows are prefixed with |log2| for sorting, then the key is cut off.
+        split_genes() {{
+            awk -F'\t' -v OFS='\t' -v want="$1" \
+                -v amp={params.amp_log2} -v del={params.del_log2} \
+                -v minp={params.min_probes} '
+                NR == 1 {{
+                    for (i = 1; i <= NF; i++) col[$i] = i
+                    L = col["log2"]; P = col["probes"]
+                    print "key", $0
+                    next
+                }}
+                $P < minp {{ next }}
+                (want == "amp" && $L >= amp) || (want == "del" && $L <= del) {{
+                    print ($L < 0 ? -$L : $L), $0
+                }}' {input.tsv} \
+            | {{ IFS= read -r hdr; echo "$hdr"; sort -t"$(printf '\t')" -k1,1gr; }} \
+            | cut -f2-
+        }}
+
+        split_genes amp > {output.amp}
+        split_genes del > {output.dele}
+
+        # bare gene symbols (column 1 of the genemetrics table), header dropped
+        cut -f1 {output.amp}  | tail -n +2 > {output.amp_genes}
+        cut -f1 {output.dele} | tail -n +2 > {output.del_genes}
+
+        {{
+            echo "amplified (log2 >= {params.amp_log2}): $(wc -l < {output.amp_genes}) genes"
+            echo "deleted   (log2 <= {params.del_log2}): $(wc -l < {output.del_genes}) genes"
+        }} | tee {log}
         """
 
 

@@ -34,21 +34,21 @@ BLACKLIST_URL="https://github.com/Boyle-Lab/Blacklist/raw/master/lists/hg38-blac
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SAMPLES
-# 16 unique biological samples.
-# Bulk_sensitive_1 … Bulk_sensitive_7 are Sarek somatic-pairing aliases —
-# all map to the same FASTQ and produce identical BAMs; they are intentionally
-# excluded here.
+# 9 unique biological samples.
+# The *_1 names (and Bulk_sensitive_1 … Bulk_sensitive_7) are Sarek
+# somatic-pairing aliases: all map to the same FASTQ and produce identical
+# BAMs, so they are intentionally excluded here.
 # ─────────────────────────────────────────────────────────────────────────────
 SAMPLES=(
     Bulk_sensitive
     Bulk_resistant
-    BC1_naive       BC1_naive_1
-    BC3_naive       BC3_naive_1
-    BC217_naive     BC217_naive_1
-    BC217_resistant BC217_resistant_1
-    BC139_naive     BC139_naive_1
-    BC139_resistant BC139_resistant_1
-    BC1444_naive    BC1444_naive_1
+    BC1_naive
+    BC3_naive
+    BC217_naive
+    BC217_resistant
+    BC139_naive
+    BC139_resistant
+    BC1444_naive
 )
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -77,6 +77,10 @@ set-resources:
     mem_mb: "min(4000 * (2 ** (attempt - 1)), 16000)"
     runtime: "min(30 * (2 ** (attempt - 1)), 120)"
     threads: 1
+  genelist:
+    mem_mb: "min(2000 * (2 ** (attempt - 1)), 8000)"
+    runtime: "min(15 * (2 ** (attempt - 1)), 60)"
+    threads: 1
 
   # ─── plots ─────────────────────────────────────────────────────────────────
   scatter:
