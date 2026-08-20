@@ -20,6 +20,10 @@
 # Options
 #   --dry-run  | -n        Print jobs without submitting (DAG check)
 #   --profile  NAME        SLURM profile name  (default: slurm)
+#   --executor NAME        Snakemake executor plugin (default: slurm).
+#                          Snakemake >=8 runs LOCALLY unless an executor is
+#                          given, so this is passed explicitly.  Use
+#                          '--executor local' to run on the current machine.
 #   --jobs     N           Max concurrent cluster jobs  (default: 100)
 #   --until    RULE        Run up to (and including) a specific rule
 #   --forcerun RULE        Force-rerun a rule even if outputs are up to date
@@ -36,6 +40,7 @@ CONFIG="${SCRIPT_DIR}/config.yaml"
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 PROFILE="slurm"
+EXECUTOR="slurm"
 MAX_JOBS=100
 DRY_RUN=""
 EXTRA_ARGS=()
@@ -48,6 +53,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --profile)
             PROFILE="$2"; shift
+            ;;
+        --executor)
+            EXECUTOR="$2"; shift
             ;;
         --jobs|-j)
             MAX_JOBS="$2"; shift
@@ -64,7 +72,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1" >&2
-            echo "Usage: bash run_pipeline.sh [--dry-run] [--profile PROFILE] [--jobs N]" >&2
+            echo "Usage: bash run_pipeline.sh [--dry-run] [--profile PROFILE] [--executor NAME] [--jobs N]" >&2
             exit 1
             ;;
     esac
@@ -84,6 +92,7 @@ echo "==> Snakemake ${SM_VERSION}"
 echo "==> Snakefile:  ${SNAKEFILE}"
 echo "==> Config:     ${CONFIG}"
 echo "==> Profile:    ${PROFILE}"
+echo "==> Executor:   ${EXECUTOR}"
 echo "==> Max jobs:   ${MAX_JOBS}"
 [[ -n "${DRY_RUN}" ]] && echo "==> MODE:       DRY RUN (no jobs submitted)"
 echo ""
@@ -93,6 +102,7 @@ snakemake \
     --snakefile  "${SNAKEFILE}" \
     --configfile "${CONFIG}" \
     --profile    "${PROFILE}" \
+    --executor   "${EXECUTOR}" \
     --jobs       "${MAX_JOBS}" \
     --rerun-incomplete \
     --keep-going \

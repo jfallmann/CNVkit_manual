@@ -219,3 +219,6 @@ __marimo__/
 
 # snakemake
 .snakemake
+
+#abacus
+.abacusai/config.json
