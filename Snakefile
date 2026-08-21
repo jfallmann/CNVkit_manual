@@ -34,6 +34,9 @@
 #   bash run_pipeline.sh --dry-run  # check DAG only
 # =============================================================================
 
+import os
+import sys
+
 configfile: "config.yaml"
 
 # ─── Derived constants ────────────────────────────────────────────────────────
@@ -63,16 +66,13 @@ MAPQ        = config["cnvkit"]["min_mapq"]
 SEG_METH    = config["cnvkit"]["segment_method"]
 COV_THREADS = config["cnvkit"]["coverage_threads"]
 
-# Ploidy / purity are never estimated here: pass them through only if the
-# config sets them, otherwise leave CNVkit's own defaults in place.
-PLOIDY = config["cnvkit"].get("ploidy")
-PURITY = config["cnvkit"].get("purity")
-CALL_OPTS = " ".join(
-    o for o in (
-        f"--ploidy {PLOIDY}" if PLOIDY else "",
-        f"--purity {PURITY}" if PURITY else "",
-    ) if o
-)
+# Ploidy / purity are never estimated here: they are resolved per (mode,
+# sample) comparison, see resolve_ploidy_purity() below. GLOBAL_* are the
+# final fallback when no mode_defaults / comparison_overrides entry matches.
+GLOBAL_PLOIDY = config["cnvkit"].get("ploidy") or 2
+GLOBAL_PURITY = config["cnvkit"].get("purity")
+MODE_DEFAULTS = config["cnvkit"].get("mode_defaults") or {}
+OVERRIDES     = config["cnvkit"].get("comparison_overrides") or {}
 
 # Chromosomes kept in the accessible genome: the canonical set minus
 # cnvkit.drop_chr.  Everything else (alt/random/unplaced contigs, chrM,
@@ -82,8 +82,14 @@ CANON_CHR  = [f"chr{c}" for c in list(range(1, 23)) + ["X", "Y"]]
 KEEP_CHR   = [c for c in CANON_CHR if c not in DROP_CHR]
 
 GENELIST   = config["cnvkit"].get("genelist") or {}
-AMP_LOG2   = GENELIST.get("amp_log2", 0.585)
-DEL_LOG2   = GENELIST.get("del_log2", -0.585)
+if "amp_log2" in GENELIST or "del_log2" in GENELIST:
+    sys.stderr.write(
+        "WARNING: cnvkit.genelist.amp_log2/del_log2 are deprecated and "
+        "ignored; gene amp/del calling now uses absolute copy number "
+        "(cnvkit.genelist.amp_offset/del_offset).\n"
+    )
+AMP_OFFSET = GENELIST.get("amp_offset", 1)
+DEL_OFFSET = GENELIST.get("del_offset", 1)
 MIN_PROBES = GENELIST.get("min_probes", 5)
 
 # ─── Helper functions ─────────────────────────────────────────────────────────
@@ -108,6 +114,41 @@ def get_reference(wildcards):
     elif wildcards.mode == "vs_normal":
         return f"{OUTDIR}/references/normal_reference.cnn"
     raise ValueError(f"Unrecognised mode wildcard: {wildcards.mode}")
+
+def resolve_ploidy_purity(mode, sample):
+    """Resolve (ploidy, purity) for one (mode, sample) comparison.
+
+    Precedence, highest to lowest:
+      comparison_overrides.<sample>.<mode>
+      > comparison_overrides.<sample>          (flat, applies to both modes)
+      > mode_defaults.<mode>
+      > global cnvkit.ploidy / cnvkit.purity
+    """
+    entry = OVERRIDES.get(sample) or {}
+    mode_entry = entry.get(mode)
+    mode_entry = mode_entry if isinstance(mode_entry, dict) else {}
+    mode_default = MODE_DEFAULTS.get(mode) or {}
+
+    ploidy = mode_entry.get(
+        "ploidy", entry.get("ploidy", mode_default.get("ploidy", GLOBAL_PLOIDY))
+    )
+    purity = mode_entry.get(
+        "purity", entry.get("purity", mode_default.get("purity", GLOBAL_PURITY))
+    )
+    return ploidy, purity
+
+def call_opts(wildcards):
+    """--ploidy/--purity flags for `cnvkit call`, resolved per comparison."""
+    ploidy, purity = resolve_ploidy_purity(wildcards.mode, wildcards.sample)
+    opts = [f"--ploidy {ploidy}"]
+    if purity:
+        opts.append(f"--purity {purity}")
+    return " ".join(opts)
+
+def get_ploidy(wildcards):
+    """Resolved ploidy for a (mode, sample) comparison, for genelist."""
+    ploidy, _ = resolve_ploidy_purity(wildcards.mode, wildcards.sample)
+    return ploidy
 
 # ─── Wildcard constraints ─────────────────────────────────────────────────────
 wildcard_constraints:
@@ -409,8 +450,11 @@ rule segment:
 # =============================================================================
 # STEP 6 — Call
 # Convert segment log2 ratios to integer absolute copy-number calls.
-# --ploidy / --purity are passed only when set in the config; CNVkit does not
-# estimate them and neither does this pipeline.
+# --ploidy / --purity are resolved per (mode, sample) comparison (see
+# resolve_ploidy_purity / call_opts) from cnvkit.ploidy/purity,
+# cnvkit.mode_defaults and cnvkit.comparison_overrides in the config; CNVkit
+# does not estimate them and neither does this pipeline. Runs for every
+# comparison listed in rule all (both vs_reference and vs_normal).
 # =============================================================================
 rule call:
     input:
@@ -419,7 +463,7 @@ rule call:
         call_cns = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.call.cns",
     params:
         cnvkit = CNVKIT,
-        opts   = CALL_OPTS,
+        opts   = call_opts,
     threads: 1
     log:
         f"{OUTDIR}/logs/{{mode}}/call.{{sample}}.log"
@@ -437,11 +481,15 @@ rule call:
 # STEP 7 — Genemetrics
 # Per-gene copy-number statistics — mean log2 ratio, p-value, etc.
 # Requires gene labels in the bins (provided by autobin --annotate refflat).
+# Segments come from the ploidy/purity-aware .call.cns (not the plain .cns),
+# so every gene row also carries the absolute copy-number (cn) column that
+# rule genelist thresholds on. -t 0 -m 1 disable genemetrics' own log2/probe
+# pre-filtering, since that filtering is now done downstream on cn.
 # =============================================================================
 rule genemetrics:
     input:
-        cnr = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.cnr",
-        cns = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.cns",
+        cnr      = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.cnr",
+        call_cns = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.call.cns",
     output:
         tsv = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.genemetrics.tsv",
     params:
@@ -453,7 +501,8 @@ rule genemetrics:
         """
         {params.cnvkit} genemetrics \
             {input.cnr} \
-            -s {input.cns} \
+            -s {input.call_cns} \
+            -t 0 -m 1 \
             -o {output.tsv} \
         2>&1 | tee {log}
         """
@@ -461,9 +510,13 @@ rule genemetrics:
 
 # =============================================================================
 # STEP 7b — Amplified / deleted gene lists
-# Split the genemetrics table at fixed log2 cutoffs (cnvkit.genelist in the
-# config) into an amplified and a deleted table, plus bare gene-symbol lists
-# for pasting into enrichment tools.  Sorted by |log2|, strongest first.
+# Split the genemetrics table (which now carries an absolute copy-number `cn`
+# column, from the .call.cns segments used in rule genemetrics) into an
+# amplified and a deleted table, plus bare gene-symbol lists for pasting into
+# enrichment tools. Cutoffs are absolute copy number, derived from this
+# comparison's resolved ploidy (cnvkit.ploidy / mode_defaults /
+# comparison_overrides) and cnvkit.genelist.amp_offset/del_offset — see
+# scripts/gene_calls.py. Sorted by |cn - ploidy|, strongest first.
 # =============================================================================
 rule genelist:
     input:
@@ -474,45 +527,27 @@ rule genelist:
         amp_genes = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.amplified.genes.txt",
         del_genes = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.deleted.genes.txt",
     params:
-        amp_log2   = AMP_LOG2,
-        del_log2   = DEL_LOG2,
+        script     = os.path.join(workflow.basedir, "scripts", "gene_calls.py"),
+        ploidy     = get_ploidy,
+        amp_offset = AMP_OFFSET,
+        del_offset = DEL_OFFSET,
         min_probes = MIN_PROBES,
     threads: 1
     log:
         f"{OUTDIR}/logs/{{mode}}/genelist.{{sample}}.log"
     shell:
-        r"""
-        # Column positions are read from the header, not hardcoded.
-        # Rows are prefixed with |log2| for sorting, then the key is cut off.
-        split_genes() {{
-            awk -F'\t' -v OFS='\t' -v want="$1" \
-                -v amp={params.amp_log2} -v del={params.del_log2} \
-                -v minp={params.min_probes} '
-                NR == 1 {{
-                    for (i = 1; i <= NF; i++) col[$i] = i
-                    L = col["log2"]; P = col["probes"]
-                    print "key", $0
-                    next
-                }}
-                $P < minp {{ next }}
-                (want == "amp" && $L >= amp) || (want == "del" && $L <= del) {{
-                    print ($L < 0 ? -$L : $L), $0
-                }}' {input.tsv} \
-            | {{ IFS= read -r hdr; echo "$hdr"; sort -t"$(printf '\t')" -k1,1gr; }} \
-            | cut -f2-
-        }}
-
-        split_genes amp > {output.amp}
-        split_genes del > {output.dele}
-
-        # bare gene symbols (column 1 of the genemetrics table), header dropped
-        cut -f1 {output.amp}  | tail -n +2 > {output.amp_genes}
-        cut -f1 {output.dele} | tail -n +2 > {output.del_genes}
-
-        {{
-            echo "amplified (log2 >= {params.amp_log2}): $(wc -l < {output.amp_genes}) genes"
-            echo "deleted   (log2 <= {params.del_log2}): $(wc -l < {output.del_genes}) genes"
-        }} | tee {log}
+        """
+        python3 {params.script} \
+            --genemetrics {input.tsv} \
+            --ploidy {params.ploidy} \
+            --amp-offset {params.amp_offset} \
+            --del-offset {params.del_offset} \
+            --min-probes {params.min_probes} \
+            --amp-out {output.amp} \
+            --del-out {output.dele} \
+            --amp-genes-out {output.amp_genes} \
+            --del-genes-out {output.del_genes} \
+        2>&1 | tee {log}
         """
 
 

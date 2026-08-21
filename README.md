@@ -3,8 +3,9 @@ Run CNVkit after Sarek for specified contrasts
 
 # 1. Copy files into WorkDir/
 # profiles/ must come along — run_pipeline.sh defaults to profiles/slurm,
-# which is where all per-rule resources live.
-cp -r 00_prepare.sh config.yaml Snakefile run_pipeline.sh profiles ${WorkDir}/
+# which is where all per-rule resources live. scripts/ must come along too —
+# rule genelist invokes scripts/gene_calls.py.
+cp -r 00_prepare.sh config.yaml Snakefile run_pipeline.sh profiles scripts ${WorkDir}/
 cd ${WorkDir}/
 
 # 2. One-time setup (symlinks + directory tree)
@@ -22,3 +23,12 @@ bash run_pipeline.sh --dry-run
 
 # 5. Launch
 bash run_pipeline.sh
+
+# ── Note on genemetrics filtering ──────────────────────────────────────────
+# rule genemetrics runs `cnvkit.py genemetrics -t 0 -m 1`, i.e. its own
+# built-in log2-ratio and min-probes pre-filtering is DISABLED on purpose:
+# every gene gets a row (with an absolute copy-number `cn` column from
+# `cnvkit call`), and rule genelist / scripts/gene_calls.py do the real
+# amp/del filtering downstream based on cn vs. ploidy. Don't re-enable -t/-m
+# in rule genemetrics without also updating gene_calls.py — that would just
+# double-filter, or filter out genes gene_calls.py needs to see.
