@@ -58,6 +58,12 @@ bash run_pipeline.sh
 # interactive scatters (HTML) under cn_scatters/, temporal/ and conserved/.
 
 # ── Configuration knobs ─────────────────────────────────────────────────────
+# For hybrid-capture WES, set cnvkit.method: hybrid and cnvkit.target_bed to
+# the capture-target BED (matching the FASTA assembly and chromosome names).
+# The BED is a tracked autobin input passed via --targets; changes trigger
+# bin regeneration. Missing BED configuration/files fail before execution.
+# Environment variables and ~ in target_bed are expanded. All samples must
+# share a compatible capture design. WGS (method: wgs) ignores target_bed.
 # ploidy/purity precedence (highest first):
 #   comparison_overrides.<sample>.<mode> > comparison_overrides.<sample>
 #   > mode_defaults.<mode> > global cnvkit.ploidy/purity

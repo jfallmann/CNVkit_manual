@@ -88,6 +88,13 @@ ACCESS_EXCLUDE  = config["cnvkit"].get("access_exclude") or []
 ACCESS_MIN_GAP  = config["cnvkit"].get("access_min_gap", 5000)
 
 METHOD      = config["cnvkit"]["method"]
+TARGET_BED = []
+if METHOD == "hybrid":
+    target_bed = config["cnvkit"].get("target_bed")
+    if not isinstance(target_bed, str) or not target_bed.strip():
+        raise ValueError("WES (cnvkit.method: hybrid) requires cnvkit.target_bed")
+    TARGET_BED = [expand_path(target_bed)]
+
 MAPQ        = config["cnvkit"]["min_mapq"]
 SEG_METH    = config["cnvkit"]["segment_method"]
 COV_THREADS = config["cnvkit"]["coverage_threads"]
@@ -252,14 +259,15 @@ rule access:
 
 # =============================================================================
 # STEP 1 — Autobin
-# Generate genome-wide WGS target and antitarget BED files.
+# Generate WGS bins or hybrid WES bins using the configured capture-target BED.
 # Done once using the normal BAM; the resulting bins are shared by all samples.
-# Method 'wgs' requires the accessible-regions BED, passed via -g.
+# Hybrid runs must share a capture design; WGS does not use a capture-target BED.
 # =============================================================================
 rule autobin:
     input:
         bam     = bam_path(NORMAL),
         bai     = bai_path(NORMAL),
+        targets = TARGET_BED,
         access  = f"{OUTDIR}/bins/access.bed",
         fasta   = FASTA,
         refflat = REFFLAT,
@@ -269,6 +277,7 @@ rule autobin:
     params:
         cnvkit = CNVKIT,
         method = METHOD,
+        targets_flag = "--targets" if TARGET_BED else "",
     threads: 1
     log:
         f"{OUTDIR}/logs/autobin.log"
@@ -276,13 +285,14 @@ rule autobin:
         """
         mkdir -p "$(dirname {output.target})" "$(dirname {log})"
 
-        {params.cnvkit} autobin {input.bam} \
-            --method {params.method} \
-            --fasta {input.fasta} \
-            --access {input.access} \
-            --annotate {input.refflat} \
-            --target-output-bed {output.target} \
-            --antitarget-output-bed {output.antitarget} \
+        {params.cnvkit} autobin {input.bam:q} \
+            --method {params.method:q} \
+            {params.targets_flag} {input.targets:q} \
+            --fasta {input.fasta:q} \
+            --access {input.access:q} \
+            --annotate {input.refflat:q} \
+            --target-output-bed {output.target:q} \
+            --antitarget-output-bed {output.antitarget:q} \
         2>&1 | tee {log}
         """
 
