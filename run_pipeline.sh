@@ -111,6 +111,7 @@ snakemake \
     --rerun-incomplete \
     --keep-going \
     --printshellcmds \
+    --use-conda \
     ${DRY_RUN} \
     "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 

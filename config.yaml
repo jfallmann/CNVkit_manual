@@ -9,7 +9,10 @@
 # BAMs are expected at:
 #   {project_dir}/preprocessing/recalibrated/{sample}/{sample}.recal.bam
 # This is the standard nf-core/Sarek recalibrated BAM layout.
+# Set bam_dir to an alternative root; BAMs are then expected at
+#   {bam_dir}/{sample}/{sample}.recal.bam
 project_dir: "${PROJECT_DIR}"
+# bam_dir: "${BAM_DIR}"
 
 # Pipeline output directory (absolute)
 outdir: "${OUTPUT_DIR}/cnvkit_manual"
@@ -164,3 +167,129 @@ cnvkit:
 #     profiles/slurm/config.v8+.yaml   ->  set-resources:
 #
 # Edit that file to change job resources.
+
+# ─── Pairwise comparisons ────────────────────────────────────────────────────
+# Registered pairwise (tumor vs reference) comparisons.  Each entry creates a
+# "pairwise_<id>" analysis mode; the reference sample's coverage is turned into
+# a per-sample reference (references/<reference>.cnn) unless it is the normal
+# sample (which reuses references/normal_reference.cnn).
+pairwise_comparisons:
+  bc139_vs_bc1:
+    sample: BC139_naive
+    reference: BC1_naive
+  bc139_vs_bc3:
+    sample: BC139_naive
+    reference: BC3_naive
+  bc217_vs_bc1:
+    sample: BC217_naive
+    reference: BC1_naive
+  bc217_vs_bc3:
+    sample: BC217_naive
+    reference: BC3_naive
+  bc139_resistant_vs_naive:
+    sample: BC139_resistant
+    reference: BC139_naive
+  bc217_resistant_vs_naive:
+    sample: BC217_resistant
+    reference: BC217_naive
+
+# ─── Summary analysis (CNV_from_WES.R features) ──────────────────────────────
+# Comparison IDs below are "<mode>__<sample>" as built by scripts/workflow_config.py.
+analysis:
+  enabled: true
+  resistance_samples:
+    - Bulk_resistant
+    - BC139_resistant
+    - BC217_resistant
+  thresholds:
+    log2_high: 0.4
+    log2_low: 0.2
+    probe_high: 100
+    probe_med: 30
+    min_size_kb: 100
+    gap_merge: 1000000
+    gene_log2: 0.3
+    gene_weight: 0.5
+  plots:
+    top_n: 40
+    heatmap_max: 60
+    cn_cap: 10
+    heatmap_cap: 6
+    label_top: 25
+  oncogenes:
+    - KRAS
+    - EGFR
+    - MYC
+    - MYCL
+    - MYCN
+    - MET
+    - ERBB2
+    - BRAF
+    - PIK3CA
+    - CDKN2A
+    - CDKN2B
+    - TP53
+    - RB1
+    - PTEN
+    - MDM2
+    - MDM4
+    - CCND1
+    - CCNE1
+    - CDK4
+    - CDK6
+    - SOX2
+    - TERT
+    - NKX2-1
+    - ALK
+    - ROS1
+    - RET
+    - FGFR1
+    - KEAP1
+    - STK11
+    - SMARCA4
+    - YAP1
+    - NFE2L2
+    - AURKA
+    - TITF1
+  temporal_clones:
+    BC139:
+      timeline:
+        - comparison: vs_reference__BC139_naive
+          label: BC139 vs reference
+        - comparison: pairwise_bc139_vs_bc1__BC139_naive
+          label: BC139 vs sensitive BC1
+        - comparison: pairwise_bc139_vs_bc3__BC139_naive
+          label: BC139 vs sensitive BC3
+        - comparison: pairwise_bc139_resistant_vs_naive__BC139_resistant
+          label: BC139R vs naive BC139
+    BC217:
+      timeline:
+        - comparison: vs_reference__BC217_naive
+          label: BC217 vs reference
+        - comparison: pairwise_bc217_vs_bc1__BC217_naive
+          label: BC217 vs sensitive BC1
+        - comparison: pairwise_bc217_vs_bc3__BC217_naive
+          label: BC217 vs sensitive BC3
+        - comparison: pairwise_bc217_resistant_vs_naive__BC217_resistant
+          label: BC217R vs naive BC217
+  conserved_comparisons:
+    bc139_bc217:
+      clones: [BC139, BC217]
+  scatter_comparisons:
+    bc1_vs_bc3:
+      comparisons: [vs_reference__BC1_naive, vs_reference__BC3_naive]
+      title: "Sensitive clones vs reference: BC1 vs BC3"
+      xlab: BC1 copy number (vs reference)
+      ylab: BC3 copy number (vs reference)
+    bc139_vs_bc1_vs_bc3:
+      comparisons: [pairwise_bc139_vs_bc1__BC139_naive, pairwise_bc139_vs_bc3__BC139_naive]
+      title: "BC139 vs sensitive parents: BC1 vs BC3"
+      xlab: BC139 copy number (vs sensitive BC1)
+      ylab: BC139 copy number (vs sensitive BC3)
+      genemetrics_comparisons: [vs_reference__BC139_naive, vs_reference__BC139_resistant]
+    bc217_vs_bc1_vs_bc3:
+      comparisons: [pairwise_bc217_vs_bc1__BC217_naive, pairwise_bc217_vs_bc3__BC217_naive]
+      title: "BC217 vs sensitive parents: BC1 vs BC3"
+      xlab: BC217 copy number (vs sensitive BC1)
+      ylab: BC217 copy number (vs sensitive BC3)
+      genemetrics_comparisons: [vs_reference__BC217_naive, vs_reference__BC217_resistant]

@@ -59,6 +59,10 @@ set-resources:
     mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
     runtime: "min(60 * (2 ** (attempt - 1)), 240)"
     threads: 1
+  build_sample_reference:
+    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
+    runtime: "min(60 * (2 ** (attempt - 1)), 240)"
+    threads: 1
 
   # ─── per-sample calling ────────────────────────────────────────────────────
   fix:
@@ -98,6 +102,16 @@ set-resources:
   heatmap_vs_normal:
     mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
     runtime: "min(60 * (2 ** (attempt - 1)), 240)"
+    threads: 1
+
+  # ─── summary reports ───────────────────────────────────────────────────────
+  manifest:
+    mem_mb: "min(2000 * (2 ** (attempt - 1)), 8000)"
+    runtime: "min(15 * (2 ** (attempt - 1)), 60)"
+    threads: 1
+  summary:
+    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
+    runtime: "min(120 * (2 ** (attempt - 1)), 480)"
     threads: 1
 
 jobs: 100

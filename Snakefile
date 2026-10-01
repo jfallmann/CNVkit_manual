@@ -36,8 +36,29 @@
 
 import os
 import sys
+import json
+import re
 
-configfile: "config.yaml"
+sys.path.insert(0, os.path.join(workflow.basedir, "scripts"))
+from workflow_config import (comparisons, expand_path, resolve_call,
+                             summary_manifest, summary_outputs)
+
+if not workflow.overwrite_configfiles:
+    configfile: os.path.join(workflow.basedir, "config.yaml")
+
+for key in ("project_dir", "outdir", "fasta", "refflat"):
+    config[key] = expand_path(config[key])
+if config.get("bam_dir"):
+    config["bam_dir"] = expand_path(config["bam_dir"])
+config["cnvkit"]["access_exclude"] = [
+    expand_path(p) for p in config["cnvkit"].get("access_exclude", [])
+]
+COMPARISONS = comparisons(config)
+COMPARISON_MAP = {(r["mode"], r["sample"]): r for r in COMPARISONS}
+MANIFEST = summary_manifest(config, COMPARISONS)
+REPORT_OUTPUTS = summary_outputs(MANIFEST)
+REFERENCE_SAMPLES = sorted({r["reference"] for r in COMPARISONS
+                            if r["reference"] not in ("human_reference", config["normal_sample"])})
 
 # ─── Derived constants ────────────────────────────────────────────────────────
 PROJECT  = config["project_dir"]
@@ -46,10 +67,15 @@ FASTA    = config["fasta"]
 REFFLAT  = config["refflat"]
 CONDA    = config["conda_env"]
 NORMAL   = config["normal_sample"]
+BAM_DIR  = config.get("bam_dir")
 
 ALL_SAMPLES    = config["all_samples"]
 VS_REF_SAMPLES = config["vs_ref_samples"]
 VS_NOR_SAMPLES = config["vs_normal_samples"]
+
+PAIRWISE_MODES = ["pairwise_" + name for name in (config.get("pairwise_comparisons") or {})]
+COMPARISON_MODES   = [r["mode"] for r in COMPARISONS]
+COMPARISON_SAMPLES = [r["sample"] for r in COMPARISONS]
 
 # Prefix for every CNVkit call — activates the named conda env without
 # requiring the SLURM job script to run in an interactive shell.
@@ -65,14 +91,6 @@ METHOD      = config["cnvkit"]["method"]
 MAPQ        = config["cnvkit"]["min_mapq"]
 SEG_METH    = config["cnvkit"]["segment_method"]
 COV_THREADS = config["cnvkit"]["coverage_threads"]
-
-# Ploidy / purity are never estimated here: they are resolved per (mode,
-# sample) comparison, see resolve_ploidy_purity() below. GLOBAL_* are the
-# final fallback when no mode_defaults / comparison_overrides entry matches.
-GLOBAL_PLOIDY = config["cnvkit"].get("ploidy") or 2
-GLOBAL_PURITY = config["cnvkit"].get("purity")
-MODE_DEFAULTS = config["cnvkit"].get("mode_defaults") or {}
-OVERRIDES     = config["cnvkit"].get("comparison_overrides") or {}
 
 # Chromosomes kept in the accessible genome: the canonical set minus
 # cnvkit.drop_chr.  Everything else (alt/random/unplaced contigs, chrM,
@@ -96,6 +114,8 @@ MIN_PROBES = GENELIST.get("min_probes", 5)
 
 def bam_path(sample):
     """Absolute path to the recalibrated BAM for *sample*."""
+    if BAM_DIR:
+        return f"{BAM_DIR}/{sample}/{sample}.recal.bam"
     return f"{PROJECT}/preprocessing/recalibrated/{sample}/{sample}.recal.bam"
 
 def bai_path(sample):
@@ -109,33 +129,18 @@ def get_bai(wildcards):
 
 def get_reference(wildcards):
     """Return the CNN reference matching the requested analysis mode."""
-    if wildcards.mode == "vs_reference":
+    row = COMPARISON_MAP.get((wildcards.mode, wildcards.sample))
+    if row is None:
+        raise ValueError(f"Unregistered comparison: {wildcards.mode}/{wildcards.sample}")
+    if row["reference"] == "human_reference":
         return f"{OUTDIR}/references/flat_reference.cnn"
-    elif wildcards.mode == "vs_normal":
+    if row["reference"] == NORMAL:
         return f"{OUTDIR}/references/normal_reference.cnn"
-    raise ValueError(f"Unrecognised mode wildcard: {wildcards.mode}")
+    return f"{OUTDIR}/references/{row['reference']}.cnn"
 
 def resolve_ploidy_purity(mode, sample):
-    """Resolve (ploidy, purity) for one (mode, sample) comparison.
-
-    Precedence, highest to lowest:
-      comparison_overrides.<sample>.<mode>
-      > comparison_overrides.<sample>          (flat, applies to both modes)
-      > mode_defaults.<mode>
-      > global cnvkit.ploidy / cnvkit.purity
-    """
-    entry = OVERRIDES.get(sample) or {}
-    mode_entry = entry.get(mode)
-    mode_entry = mode_entry if isinstance(mode_entry, dict) else {}
-    mode_default = MODE_DEFAULTS.get(mode) or {}
-
-    ploidy = mode_entry.get(
-        "ploidy", entry.get("ploidy", mode_default.get("ploidy", GLOBAL_PLOIDY))
-    )
-    purity = mode_entry.get(
-        "purity", entry.get("purity", mode_default.get("purity", GLOBAL_PURITY))
-    )
-    return ploidy, purity
+    """Resolve (ploidy, purity) for one (mode, sample) comparison."""
+    return resolve_call(config, mode, sample)
 
 def call_opts(wildcards):
     """--ploidy/--purity flags for `cnvkit call`, resolved per comparison."""
@@ -152,67 +157,54 @@ def get_ploidy(wildcards):
 
 # ─── Wildcard constraints ─────────────────────────────────────────────────────
 wildcard_constraints:
-    mode   = "vs_reference|vs_normal",
-    sample = "|".join(ALL_SAMPLES),
+    mode      = "|".join(re.escape(m) for m in ["vs_reference", "vs_normal"] + PAIRWISE_MODES),
+    sample    = "|".join(re.escape(s) for s in ALL_SAMPLES),
+    reference = "|".join(re.escape(r) for r in REFERENCE_SAMPLES) or "(?!)",
 
 # =============================================================================
 # Target rule — collect all final outputs
 # =============================================================================
 rule all:
     input:
-        # ── vs_reference ──────────────────────────────────────────────────────
         expand(
-            f"{OUTDIR}/vs_reference/{{sample}}/{{sample}}.genemetrics.tsv",
-            sample=VS_REF_SAMPLES,
+            f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.cnr",
+            zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
         ),
         expand(
-            f"{OUTDIR}/vs_reference/{{sample}}/{{sample}}.amplified.tsv",
-            sample=VS_REF_SAMPLES,
+            f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.genemetrics.tsv",
+            zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
         ),
         expand(
-            f"{OUTDIR}/vs_reference/{{sample}}/{{sample}}.deleted.tsv",
-            sample=VS_REF_SAMPLES,
+            f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.amplified.tsv",
+            zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
         ),
         expand(
-            f"{OUTDIR}/vs_reference/{{sample}}/{{sample}}.call.cns",
-            sample=VS_REF_SAMPLES,
+            f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.deleted.tsv",
+            zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
         ),
         expand(
-            f"{OUTDIR}/vs_reference/{{sample}}/{{sample}}.scatter.png",
-            sample=VS_REF_SAMPLES,
+            f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.call.cns",
+            zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
         ),
         expand(
-            f"{OUTDIR}/vs_reference/{{sample}}/{{sample}}.diagram.pdf",
-            sample=VS_REF_SAMPLES,
-        ),
-        f"{OUTDIR}/vs_reference/heatmap.pdf",
-
-        # ── vs_normal ─────────────────────────────────────────────────────────
-        expand(
-            f"{OUTDIR}/vs_normal/{{sample}}/{{sample}}.genemetrics.tsv",
-            sample=VS_NOR_SAMPLES,
+            f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.scatter.png",
+            zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
         ),
         expand(
-            f"{OUTDIR}/vs_normal/{{sample}}/{{sample}}.amplified.tsv",
-            sample=VS_NOR_SAMPLES,
+            f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.diagram.pdf",
+            zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
         ),
         expand(
-            f"{OUTDIR}/vs_normal/{{sample}}/{{sample}}.deleted.tsv",
-            sample=VS_NOR_SAMPLES,
+            f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.amplified.genes.txt",
+            zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
         ),
         expand(
-            f"{OUTDIR}/vs_normal/{{sample}}/{{sample}}.call.cns",
-            sample=VS_NOR_SAMPLES,
+            f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.deleted.genes.txt",
+            zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
         ),
-        expand(
-            f"{OUTDIR}/vs_normal/{{sample}}/{{sample}}.scatter.png",
-            sample=VS_NOR_SAMPLES,
-        ),
-        expand(
-            f"{OUTDIR}/vs_normal/{{sample}}/{{sample}}.diagram.pdf",
-            sample=VS_NOR_SAMPLES,
-        ),
-        f"{OUTDIR}/vs_normal/heatmap.pdf",
+        *([f"{OUTDIR}/vs_reference/heatmap.pdf"] if VS_REF_SAMPLES else []),
+        *([f"{OUTDIR}/vs_normal/heatmap.pdf"] if VS_NOR_SAMPLES else []),
+        *REPORT_OUTPUTS,
 
 
 # =============================================================================
@@ -266,17 +258,17 @@ rule access:
 # =============================================================================
 rule autobin:
     input:
-        bam    = bam_path(NORMAL),
-        bai    = bai_path(NORMAL),
-        access = f"{OUTDIR}/bins/access.bed",
+        bam     = bam_path(NORMAL),
+        bai     = bai_path(NORMAL),
+        access  = f"{OUTDIR}/bins/access.bed",
+        fasta   = FASTA,
+        refflat = REFFLAT,
     output:
         target     = f"{OUTDIR}/bins/cnvkit_targets.bed",
         antitarget = f"{OUTDIR}/bins/cnvkit_antitargets.bed",
     params:
-        cnvkit  = CNVKIT,
-        method  = METHOD,
-        fasta   = FASTA,
-        refflat = REFFLAT,
+        cnvkit = CNVKIT,
+        method = METHOD,
     threads: 1
     log:
         f"{OUTDIR}/logs/autobin.log"
@@ -286,9 +278,9 @@ rule autobin:
 
         {params.cnvkit} autobin {input.bam} \
             --method {params.method} \
-            --fasta {params.fasta} \
+            --fasta {input.fasta} \
             --access {input.access} \
-            --annotate {params.refflat} \
+            --annotate {input.refflat} \
             --target-output-bed {output.target} \
             --antitarget-output-bed {output.antitarget} \
         2>&1 | tee {log}
@@ -344,11 +336,11 @@ rule build_flat_reference:
     input:
         target     = f"{OUTDIR}/bins/cnvkit_targets.bed",
         antitarget = f"{OUTDIR}/bins/cnvkit_antitargets.bed",
+        fasta      = FASTA,
     output:
         ref = f"{OUTDIR}/references/flat_reference.cnn",
     params:
         cnvkit = CNVKIT,
-        fasta  = FASTA,
     threads: 1
     log:
         f"{OUTDIR}/logs/build_flat_reference.log"
@@ -357,7 +349,7 @@ rule build_flat_reference:
         {params.cnvkit} reference \
             -t {input.target} \
             -a {input.antitarget} \
-            --fasta {params.fasta} \
+            --fasta {input.fasta} \
             -o {output.ref} \
         2>&1 | tee {log}
         """
@@ -374,11 +366,11 @@ rule build_normal_reference:
     input:
         target_cov     = f"{OUTDIR}/coverage/{NORMAL}.targetcoverage.cnn",
         antitarget_cov = f"{OUTDIR}/coverage/{NORMAL}.antitargetcoverage.cnn",
+        fasta          = FASTA,
     output:
         ref = f"{OUTDIR}/references/normal_reference.cnn",
     params:
         cnvkit = CNVKIT,
-        fasta  = FASTA,
     threads: 1
     log:
         f"{OUTDIR}/logs/build_normal_reference.log"
@@ -386,7 +378,29 @@ rule build_normal_reference:
         """
         {params.cnvkit} reference \
             {input.target_cov} {input.antitarget_cov} \
-            --fasta {params.fasta} \
+            --fasta {input.fasta} \
+            -o {output.ref} \
+        2>&1 | tee {log}
+        """
+
+
+rule build_sample_reference:
+    input:
+        target_cov     = f"{OUTDIR}/coverage/{{reference}}.targetcoverage.cnn",
+        antitarget_cov = f"{OUTDIR}/coverage/{{reference}}.antitargetcoverage.cnn",
+        fasta          = FASTA,
+    output:
+        ref = f"{OUTDIR}/references/{{reference}}.cnn",
+    params:
+        cnvkit = CNVKIT,
+    threads: 1
+    log:
+        f"{OUTDIR}/logs/build_sample_reference.{{reference}}.log"
+    shell:
+        """
+        {params.cnvkit} reference \
+            {input.target_cov} {input.antitarget_cov} \
+            --fasta {input.fasta} \
             -o {output.ref} \
         2>&1 | tee {log}
         """
@@ -520,14 +534,14 @@ rule genemetrics:
 # =============================================================================
 rule genelist:
     input:
-        tsv = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.genemetrics.tsv",
+        tsv    = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.genemetrics.tsv",
+        script = os.path.join(workflow.basedir, "scripts", "gene_calls.py"),
     output:
         amp       = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.amplified.tsv",
         dele      = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.deleted.tsv",
         amp_genes = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.amplified.genes.txt",
         del_genes = f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.deleted.genes.txt",
     params:
-        script     = os.path.join(workflow.basedir, "scripts", "gene_calls.py"),
         ploidy     = get_ploidy,
         amp_offset = AMP_OFFSET,
         del_offset = DEL_OFFSET,
@@ -537,7 +551,7 @@ rule genelist:
         f"{OUTDIR}/logs/{{mode}}/genelist.{{sample}}.log"
     shell:
         """
-        python3 {params.script} \
+        python3 {input.script:q} \
             --genemetrics {input.tsv} \
             --ploidy {params.ploidy} \
             --amp-offset {params.amp_offset} \
@@ -646,3 +660,51 @@ rule heatmap_vs_normal:
             -o {output.pdf} \
         2>&1 | tee {log}
         """
+
+
+if MANIFEST is not None:
+    rule manifest:
+        input:
+            config = workflow.configfiles,
+            wfcfg  = os.path.join(workflow.basedir, "scripts", "workflow_config.py"),
+        output:
+            json = f"{OUTDIR}/summary/manifest.json",
+        params:
+            manifest = lambda w: json.dumps({**MANIFEST, "expected_outputs": REPORT_OUTPUTS}, indent=2),
+        threads: 1
+        log:
+            f"{OUTDIR}/logs/manifest.log"
+        shell:
+            """
+            mkdir -p "$(dirname "{output.json}")" "$(dirname "{log}")"
+            printf '%s\n' {params.manifest:q} > "{output.json}"
+            """
+
+    rule summary:
+        input:
+            cnr = expand(
+                f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.cnr",
+                zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
+            ),
+            call_cns = expand(
+                f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.call.cns",
+                zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
+            ),
+            genemetrics = expand(
+                f"{OUTDIR}/{{mode}}/{{sample}}/{{sample}}.genemetrics.tsv",
+                zip, mode=COMPARISON_MODES, sample=COMPARISON_SAMPLES,
+            ),
+            manifest = f"{OUTDIR}/summary/manifest.json",
+            script   = os.path.join(workflow.basedir, "scripts", "cnv_summary.R"),
+        output:
+            REPORT_OUTPUTS,
+        conda:
+            "envs/cnv_summary.yaml",
+        threads: 1
+        log:
+            f"{OUTDIR}/logs/summary.log"
+        shell:
+            """
+            mkdir -p "$(dirname "{log}")"
+            Rscript --vanilla {input.script:q} {input.manifest:q} 2>&1 | tee "{log}"
+            """

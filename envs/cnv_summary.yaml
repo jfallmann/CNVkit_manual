@@ -1,0 +1,18 @@
+channels:
+  - conda-forge
+dependencies:
+  - r-base>=4.3
+  - r-dplyr
+  - r-ggplot2
+  - r-purrr
+  - r-readr
+  - r-stringr
+  - r-tidyr
+  - r-jsonlite
+  - r-scales
+  - r-ggrepel
+  - r-ggalluvial
+  - r-patchwork
+  - r-plotly
+  - r-htmlwidgets
+  - pandoc
