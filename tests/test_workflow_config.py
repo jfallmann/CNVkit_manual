@@ -113,6 +113,76 @@ def test_null_mappings():
     assert manifest["scatter_comparisons"] == []
 
 
+def test_invalid_ploidy_purity():
+    for bad in (0, 2.5, True, "2"):
+        cfg = base_config()
+        cfg["cnvkit"]["ploidy"] = bad
+        with pytest.raises(ValueError):
+            comparisons(cfg)
+    for bad in (0, -0.1, 1.5, True):
+        cfg = base_config()
+        cfg["cnvkit"]["purity"] = bad
+        with pytest.raises(ValueError):
+            comparisons(cfg)
+
+
+def test_invalid_mode_overrides():
+    cfg = base_config()
+    cfg["cnvkit"]["comparison_overrides"] = {"T1": {"vs_normal": {"purity": 1.5}}}
+    with pytest.raises(ValueError):
+        comparisons(cfg)
+    cfg = base_config()
+    cfg["cnvkit"]["comparison_overrides"] = {"T1": {"vs_normal": {"ploidy": 2.5}}}
+    with pytest.raises(ValueError):
+        comparisons(cfg)
+
+
+def test_reserved_reference_sample_rejected():
+    cfg = base_config()
+    cfg["all_samples"] = ["flat_reference", "T1", "T2"]
+    cfg["normal_sample"] = "flat_reference"
+    with pytest.raises(ValueError):
+        comparisons(cfg)
+
+
+def test_duplicate_comparison_ids_rejected():
+    cfg = base_config()
+    cfg["all_samples"] = ["N", "T1", "T2", "y__T1"]
+    cfg["pairwise_comparisons"] = {
+        "x__y": {"sample": "T1", "reference": "T2"},
+        "x": {"sample": "y__T1", "reference": "T2"},
+    }
+    with pytest.raises(ValueError):
+        comparisons(cfg)
+
+
+def test_duplicate_summary_outputs_rejected():
+    cfg = base_config()
+    cfg["analysis"] = {
+        "enabled": True,
+        "scatter_comparisons": {
+            "foo": {"comparisons": ["vs_reference__T1", "vs_reference__T2"],
+                    "genemetrics_comparisons": ["vs_reference__T1", "vs_reference__T2"]},
+            "foo_abs": {"comparisons": ["vs_normal__T1", "vs_normal__T2"]},
+        },
+    }
+    with pytest.raises(ValueError):
+        summary_outputs(summary_manifest(cfg, comparisons(cfg)))
+
+
+def test_empty_label_rejected():
+    cfg = base_config()
+    cfg["analysis"] = {
+        "enabled": True,
+        "temporal_clones": {"C1": {"timeline": [
+            {"comparison": "vs_reference__T1", "label": ""},
+            {"comparison": "vs_normal__T1", "label": "b"},
+        ]}},
+    }
+    with pytest.raises(ValueError):
+        summary_manifest(cfg, comparisons(cfg))
+
+
 def _write_config(tmp_path, cfg):
     cfgfile = tmp_path / "config.json"
     cfgfile.write_text(json.dumps(cfg))
