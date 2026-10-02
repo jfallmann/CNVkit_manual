@@ -723,6 +723,17 @@ cn_state_scatter <- function(tab, xlab, ylab, title, out_prefix, cap = CN_CAP,
     filter(!is_oncogene) %>%
     mutate(dev = abs(x - bx) + abs(y - by)) %>%
     slice_max(dev, n = label_top, with_ties = FALSE)
+  # Divergent genes (changed on one axis but not the other, or opposite
+  # direction) are often the most interesting - they are what differs
+  # between the two comparisons. Oncogenes are always labelled; the
+  # strongest-diverging non-oncogenes (top `label_top` by how far apart the
+  # two axes' per-gene changes are) are also labelled.
+  divergent <- tab %>% filter(joint == "divergent")
+  lab_onco_div  <- divergent %>% filter(is_oncogene)
+  lab_other_div <- divergent %>%
+    filter(!is_oncogene) %>%
+    mutate(dev = abs((x - bx) - (y - by))) %>%
+    slice_max(dev, n = label_top, with_ties = FALSE)
   state_cols <- c("gain in both" = "#B2182B", "loss in both" = "#2166AC",
                   "divergent" = "grey60", "neutral in both" = "grey85")
   p <- ggplot(tab, aes(xp, yp, color = joint)) +
@@ -747,11 +758,29 @@ cn_state_scatter <- function(tab, xlab, ylab, title, out_prefix, cap = CN_CAP,
          min.segment.length = 0, segment.size = 0.3, segment.color = "grey40",
          box.padding = 0.6, point.padding = 0.3, force = 3, seed = 1,
          bg.color = "white", bg.r = 0.18)} +
+    {if (requireNamespace("ggrepel", quietly = TRUE) && nrow(lab_other_div) > 0)
+       ggrepel::geom_text_repel(
+         data = lab_other_div,
+         aes(label = gene), size = 2.2, color = "grey40", fontface = "italic",
+         max.overlaps = Inf, show.legend = FALSE, inherit.aes = TRUE,
+         min.segment.length = 0, segment.size = 0.2, segment.color = "grey70",
+         box.padding = 0.5, point.padding = 0.3, force = 3, seed = 1,
+         bg.color = "white", bg.r = 0.15)} +
+    {if (requireNamespace("ggrepel", quietly = TRUE) && nrow(lab_onco_div) > 0)
+       ggrepel::geom_text_repel(
+         data = lab_onco_div,
+         aes(label = gene), size = 2.6, color = "black", fontface = "bold.italic",
+         max.overlaps = Inf, show.legend = FALSE, inherit.aes = TRUE,
+         min.segment.length = 0, segment.size = 0.3, segment.color = "grey40",
+         box.padding = 0.6, point.padding = 0.3, force = 3, seed = 1,
+         bg.color = "white", bg.r = 0.18)} +
     coord_cartesian(xlim = c(0, cap), ylim = c(0, cap)) +
     labs(x = xlab, y = ylab, title = title,
          subtitle = paste0("Dashed = configured ploidy (", bx, ", ", by, ") | axes clamped at ", cap,
                            " | concordant oncogenes (bold) + top ", label_top,
-                           " other genes labelled")) +
+                           " other concordant genes labelled",
+                           " | divergent oncogenes (bold italic) + top ", label_top,
+                           " other divergent genes labelled (italic)")) +
     theme_bw(base_size = 10)
   ggsave(paste0(out_prefix, ".pdf"), p, width = 7, height = 6, limitsize = FALSE)
   ggsave(paste0(out_prefix, ".png"), p, width = 7, height = 6, dpi = 150, limitsize = FALSE)
