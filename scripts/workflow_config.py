@@ -144,10 +144,10 @@ def summary_manifest(config, rows):
                 raise ValueError(f"{name}: invalid genemetrics_comparisons")
             scatter["gm"] = dict(x=gm[0], y=gm[1])
         scatters.append(scatter)
-    plots = dict(top_n=40, heatmap_max=60, cn_cap=10, heatmap_cap=6, label_top=25)
+    plots = dict(top_n=40, heatmap_max=60, cn_cap=10, heatmap_cap=6, label_top=25, log2_cap=3)
     plots.update(settings.get("plots") or {})
     for key, value in plots.items():
-        if key not in {"top_n", "heatmap_max", "cn_cap", "heatmap_cap", "label_top"} or isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        if key not in {"top_n", "heatmap_max", "cn_cap", "heatmap_cap", "label_top", "log2_cap"} or isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ValueError(f"Invalid positive integer plotting setting: {key}")
     oncogenes = settings.get("oncogenes")
     if oncogenes is None:

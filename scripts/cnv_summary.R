@@ -36,6 +36,7 @@ HM_MAX      <- PL$heatmap_max
 CN_CAP      <- PL$cn_cap
 HEATMAP_CAP <- PL$heatmap_cap
 LABEL_TOP   <- PL$label_top
+LOG2_CAP    <- PL$log2_cap
 
 ONCOGENES <- manifest$oncogenes
 RESISTANCE_SAMPLES <- manifest$resistance_samples
@@ -398,17 +399,13 @@ p <- ggplot() +
      annotate("text", x=Inf, y=Inf, hjust=1.1, vjust=1.1,
               label="No called segments passed filters", size=4) else NULL} +
 
-  # Clip y-axis to the BULK of the called-segment range + padding.
-  # Use robust quantiles so a few extreme segments (e.g. chrY homozygous
-  # deletions at log2fc ~ -7) don't blow out the scale and squash the real
-  # signal. Outlier segments are still drawn but clipped at the panel edge.
-  {if (nrow(all_seg_plot) > 0)
-     coord_cartesian(ylim = c(
-       min(quantile(all_seg_plot$log2fc, 0.02, na.rm = TRUE), -LOG2_HIGH) * 1.3,
-       max(quantile(all_seg_plot$log2fc, 0.98, na.rm = TRUE),  LOG2_HIGH) * 1.3
-     ))
-   else
-     coord_cartesian(ylim = c(-LOG2_HIGH * 1.3, LOG2_HIGH * 1.3))} +
+  # Clip the y-axis to a fixed +/- LOG2_CAP window (shared across all facets,
+  # since facet_wrap uses a common scale). A hard cap - rather than a
+  # quantile of the data - keeps the axis readable even when a handful of
+  # segments (e.g. chrY homozygous deletions at log2fc ~ -7) would otherwise
+  # still dominate the 2nd/98th percentile and blow out every panel.
+  # Outlier segments are still drawn but clipped at the panel edge.
+  coord_cartesian(ylim = c(-LOG2_CAP, LOG2_CAP)) +
 
   labs(
     x     = "Chromosome",
