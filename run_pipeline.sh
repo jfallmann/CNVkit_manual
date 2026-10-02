@@ -65,7 +65,7 @@ while [[ $# -gt 0 ]]; do
         --config|-c)
             CONFIG="$2"; shift
             ;;
-        --until|--forcerun|--touch|--unlock)
+        --until|--forcerun|--touch|--unlock|--rerun-trigger|--rerun-incomplete)
             # Pass through to snakemake as-is (with optional next arg)
             EXTRA_ARGS+=("$1")
             if [[ $# -gt 1 && ! "$2" == --* ]]; then
