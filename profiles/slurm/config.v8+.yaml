@@ -14,10 +14,18 @@
 # runtime is in minutes.
 #
 # NOTE on partitions: the snakemake SLURM executor plugin reads the resource
-# 'slurm_partition' — a plain 'partition' key is silently ignored (that is a
-# latent bug in the IMP profile).  'qos' IS read as a job resource.
-# Partition/QOS are derived from the same runtime expression:
-#     short <= 1440 min, medium <= 2880 min, long above.
+# 'slurm_partition' — a plain 'partition' key is silently ignored.  'qos' IS
+# read as a job resource.
+# CBE.next (verified on the cluster 2026-11-13): partitions are
+#     c  (default; 192 cores / ~754 GB per node)
+#     g  (GPU)
+#     m  (~7.9 TB; only sensible for mem_mb >= ~700000)
+# QOS tiers are named '<partition>_<tier>' (c_rapid, c_short, c_medium,
+# c_long, ...), with the familiar wall limits (rapid 1h, short 8h,
+# medium 2d, long 14d).  No rule here approaches the m-node memory
+# threshold, so everything runs on partition c and only the QOS tier is
+# derived from the runtime expression:
+#     rapid <= 60 min, short <= 480 min, medium <= 2880 min, long above.
 # =============================================================================
 
 executor: slurm
@@ -28,7 +36,7 @@ default-resources:
   mem_mb: "min(20000 * (2 ** (attempt - 1)), 40000)"
   runtime: "min(60 * (2 ** (attempt - 1)), 120)"
   threads: 1
-  qos: short
+  qos: "('c_' + ('rapid' if min(60 * (2 ** (attempt - 1)), 120) <= 60 else 'short' if min(60 * (2 ** (attempt - 1)), 120) <= 480 else 'medium' if min(60 * (2 ** (attempt - 1)), 120) <= 2880 else 'long'))"
   slurm_partition: c
 
 set-resources:
@@ -47,8 +55,12 @@ set-resources:
     mem_mb: "min(32000 * (2 ** (attempt - 1)), 120000)"
     runtime: "min(360 * (2 ** (attempt - 1)), 1440)"
     threads: 8
-    slurm_partition: "('c_long' if min(360 * (2 ** (attempt - 1)), 1440) > 2880 else 'c_medium' if min(360 * (2 ** (attempt - 1)), 1440) > 1440 else 'c')"
-    qos: "('long' if min(360 * (2 ** (attempt - 1)), 1440) > 2880 else 'medium' if min(360 * (2 ** (attempt - 1)), 1440) > 1440 else 'short')"
+    # The retry runtime exceeds the default-derived c_short tier (8 h), so the
+    # QOS tier is re-derived from THIS rule's runtime expression:
+    #   attempt 1: 360 min -> c_short, attempt 2: 720 min -> c_medium,
+    #   attempt 3: 1440 min -> c_medium (2 d wall).
+    slurm_partition: c
+    qos: "('c_' + ('rapid' if min(360 * (2 ** (attempt - 1)), 1440) <= 60 else 'short' if min(360 * (2 ** (attempt - 1)), 1440) <= 480 else 'medium' if min(360 * (2 ** (attempt - 1)), 1440) <= 2880 else 'long'))"
 
   # ─── references ────────────────────────────────────────────────────────────
   build_flat_reference:
@@ -73,6 +85,10 @@ set-resources:
     mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
     runtime: "min(120 * (2 ** (attempt - 1)), 480)"
     threads: 1
+    # 480 min sits exactly at the c_short wall (8 h); derive the tier from
+    # this rule's own runtime so a raised cap re-routes to c_medium.
+    slurm_partition: c
+    qos: "('c_' + ('rapid' if min(120 * (2 ** (attempt - 1)), 480) <= 60 else 'short' if min(120 * (2 ** (attempt - 1)), 480) <= 480 else 'medium' if min(120 * (2 ** (attempt - 1)), 480) <= 2880 else 'long'))"
   call:
     mem_mb: "min(4000 * (2 ** (attempt - 1)), 16000)"
     runtime: "min(30 * (2 ** (attempt - 1)), 120)"
@@ -113,6 +129,9 @@ set-resources:
     mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
     runtime: "min(120 * (2 ** (attempt - 1)), 480)"
     threads: 1
+    # Same as segment: tier derived from this rule's own runtime.
+    slurm_partition: c
+    qos: "('c_' + ('rapid' if min(120 * (2 ** (attempt - 1)), 480) <= 60 else 'short' if min(120 * (2 ** (attempt - 1)), 480) <= 480 else 'medium' if min(120 * (2 ** (attempt - 1)), 480) <= 2880 else 'long'))"
 
 jobs: 100
 keep-going: true
