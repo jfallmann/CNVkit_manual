@@ -97,6 +97,19 @@ if METHOD == "hybrid":
 
 MAPQ        = config["cnvkit"]["min_mapq"]
 SEG_METH    = config["cnvkit"]["segment_method"]
+# Calling method for `cnvkit call`.  MUST be "clonal" (or "none") for --ploidy to
+# affect autosomal integer copy number: CNVkit's default "threshold" method assigns
+# cn from FIXED log2 cutoffs (-1.1,-0.25,0.2,0.7), so cn=2 means "unchanged vs the
+# baseline" regardless of --ploidy.  Against a near-triploid baseline that makes the
+# genelist del_cutoff (= round(ploidy) - del_offset = 2) swallow the entire
+# copy-neutral genome.  "clonal" gives cn = round(ploidy * 2**log2).
+CALL_METHOD = config["cnvkit"].get("call_method", "clonal")
+if CALL_METHOD == "threshold":
+    sys.stderr.write(
+        "WARNING: cnvkit.call_method='threshold' ignores --ploidy on autosomes; "
+        "the genelist amp/del cutoffs derived from ploidy will not match the cn "
+        "grid that `cnvkit call` emits.\n"
+    )
 COV_THREADS = config["cnvkit"]["coverage_threads"]
 
 # Chromosomes kept in the accessible genome: the canonical set minus
@@ -152,7 +165,7 @@ def resolve_ploidy_purity(mode, sample):
 def call_opts(wildcards):
     """--ploidy/--purity flags for `cnvkit call`, resolved per comparison."""
     ploidy, purity = resolve_ploidy_purity(wildcards.mode, wildcards.sample)
-    opts = [f"--ploidy {ploidy}"]
+    opts = [f"-m {CALL_METHOD}", f"--ploidy {ploidy}"]
     if purity:
         opts.append(f"--purity {purity}")
     return " ".join(opts)

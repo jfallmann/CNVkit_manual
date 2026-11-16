@@ -91,6 +91,16 @@ cnvkit:
   ploidy: 2
   purity: null
 
+  # Calling method passed to `cnvkit call` as -m.  Leave at "clonal".
+  # CNVkit's own default, "threshold", derives integer cn from FIXED log2
+  # cutoffs (-1.1,-0.25,0.2,0.7) and therefore IGNORES --ploidy on autosomes:
+  # cn=2 then means "unchanged relative to the baseline", not "two copies".
+  # Against the near-triploid baselines used here that makes del_cutoff
+  # (= round(ploidy) - del_offset = 2) match the whole copy-neutral genome,
+  # so 44-60% of all genes land in the deleted list.  "clonal" computes
+  # cn = round(ploidy * 2**log2), which is what the cutoffs below assume.
+  call_method: "clonal"
+
   # ── Per-mode ploidy / purity defaults ──────────────────────────────────────
   # Applies to every sample analyzed in that mode, overriding the global
   # ploidy/purity above. Typical case: vs_reference compares against the flat
